@@ -113,7 +113,7 @@ sudo chown -R importmitra:importmitra secrets runtime
 sudo chown root:importmitra .env
 sudo chmod 640 .env
 sudo chmod 700 secrets runtime
-sudo chmod 600 secrets/*.json
+sudo find secrets -maxdepth 1 -type f -name '*.json' -exec chmod 600 {} +
 sudo -u importmitra .venv/bin/python -m import_mitra check
 ```
 
