@@ -1,0 +1,26 @@
+[Unit]
+Description=Import Mitra FO dan RADIO (Google Sheets)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=importmitra
+Group=importmitra
+WorkingDirectory=/opt/import-mitra
+EnvironmentFile=/opt/import-mitra/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/import-mitra/.venv/bin/python -m import_mitra serve
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/import-mitra/runtime
+
+[Install]
+WantedBy=multi-user.target
+
