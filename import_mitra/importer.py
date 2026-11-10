@@ -145,6 +145,7 @@ class Importer:
         datasets = []
         sources = self.config["sources"]
         for i, source in enumerate(sources):
+            LOG.info("[%s/%s] Membaca %s...", i + 1, len(sources), source["title"])
             progress(phase="reading", message=f"Membaca {source['title']}", source=source["title"],
                      completed_sources=i, total_sources=len(sources))
             # Entire tab: new rows are included automatically; values API trims unused cells.
@@ -152,6 +153,7 @@ class Importer:
             data = parse_source(values, source, self.config["aliases"])
             partner_formula(data)  # Validasi HOP sebelum ada tulisan ke file tujuan.
             datasets.append(data)
+            LOG.info("[%s/%s] %s OK: %s baris", i + 1, len(sources), source["title"], len(data.rows))
         progress(completed_sources=len(sources))
         return datasets
 

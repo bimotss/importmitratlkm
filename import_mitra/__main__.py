@@ -8,6 +8,8 @@ from pathlib import Path
 from .jobs import BusyError, JobRunner
 from .settings import Settings
 
+LOG = logging.getLogger(__name__)
+
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -50,7 +52,9 @@ def main():
             from .web import make_importer
             if args.command == "check":
                 importer = make_importer(settings)
+                LOG.info("Memeriksa akses spreadsheet tujuan...")
                 importer.api.metadata(importer.target)
+                LOG.info("Akses baca tujuan OK. Memeriksa semua sumber; tidak ada sel yang diubah.")
                 result = importer.run(dry_run=True)
             else:
                 runner = JobRunner(settings, lambda: make_importer(settings))
