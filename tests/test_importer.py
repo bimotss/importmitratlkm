@@ -49,7 +49,10 @@ class MemoryAPI:
         for a1 in ranges:
             name = re.match(r"'([^']+)'!", a1).group(1)
             sheet = next(s for s in self.sheets.values() if s["properties"]["title"] == name)
-            result.append({"values": [["CORRUPT"]] if self.corrupt_header else [sheet["values"][0]]})
+            if re.search(r"!A2:A\d+$", a1):
+                result.append({"values": [[row[0] if row else ""] for row in sheet["values"][1:]]})
+            else:
+                result.append({"values": [["CORRUPT"]] if self.corrupt_header else [sheet["values"][0]]})
         return result
 
     def batch(self, target, requests, **kwargs):
@@ -66,8 +69,30 @@ class MemoryAPI:
             elif "updateCells" in request:
                 update = request["updateCells"]
                 if "range" in update:
-                    clone[update["range"]["sheetId"]]["values"] = []
-                # Formula payload is checked separately, not calculated by this fake.
+                    area = update["range"]
+                    sheet = clone[area["sheetId"]]
+                    if set(area) == {"sheetId"}:
+                        sheet["values"] = []
+                    else:
+                        for row in sheet["values"][area.get("startRowIndex", 0):area.get("endRowIndex")]:
+                            for c in range(area.get("startColumnIndex", 0), area.get("endColumnIndex", len(row))):
+                                if c < len(row):
+                                    row[c] = None  # truly absent; distinguish from a copied literal ""
+                elif "start" in update:
+                    start = update["start"]
+                    formula = update["rows"][0]["values"][0]["userEnteredValue"]["formulaValue"]
+                    sheet = clone[start["sheetId"]]
+                    matrix = sheet["values"]
+                    match = re.match(r'=ARRAYFORMULA\(IF\(([A-Z]+)2:[A-Z]+<>"","([^"]+)",""\)\)', formula)
+                    if match:
+                        key = 0
+                        for letter in match[1]:
+                            key = key * 26 + ord(letter) - 64
+                        if any(row and row[0] is not None for row in matrix[2:]):
+                            matrix[1][0] = "#REF!"  # literal empty strings block Google array expansion
+                        else:
+                            for row in matrix[1:]:
+                                row[0] = match[2] if row[key - 1] not in (None, "") else ""
             elif "updateSheetProperties" in request:
                 p = request["updateSheetProperties"]["properties"]
                 clone[p["sheetId"]]["properties"].update(copy.deepcopy(p))
@@ -150,4 +175,33 @@ def test_hourly_cod_hook_reads_rekap_only_after_rekap_publish(setup):
     result = importer.run()
     assert result["cod"]["preserve_columns"] is True
     assert calls == ["read_rekap"]
+
+
+def test_partner_array_spill_is_cleared_after_pasting_literal_empty_strings(setup):
+    config, api, importer = setup
+    for source in config["sources"]:
+        api.sources[source["id"]].append([2, "EXTRA-SITE", "EXTRA-HOP", "Witel", 200])
+    importer.run()
+    assert by_title(api, "bto")["values"][1][0] == "BTO"
+    assert by_title(api, "bto")["values"][2][0] == "BTO"
+    assert by_title(api, "pst_radio")["values"][2][0] == "PST_RADIO"
+    for batch in api.batches:
+        for i, request in enumerate(batch):
+            if "updateCells" not in request or "start" not in request["updateCells"]:
+                continue
+            previous = batch[i - 1]["updateCells"]["range"]
+            assert previous["startRowIndex"] == 1
+            assert previous["startColumnIndex"] == 0 and previous["endColumnIndex"] == 1
+
+
+def test_bad_partner_names_cannot_be_reported_as_success(setup, monkeypatch):
+    _, api, importer = setup
+    importer.run()
+    by_title(api, "bto")["values"][1][0] = "#REF!"
+    monkeypatch.setattr("import_mitra.importer.time.sleep", lambda _: None)
+    from import_mitra.importer import build_tables
+    datasets = importer.collect(lambda **kwargs: None)
+    tables, _ = build_tables(datasets, importer.config)
+    with pytest.raises(ValueError, match="Verifikasi kolom MITRA gagal"):
+        importer.verify_partner_columns(tables)
 

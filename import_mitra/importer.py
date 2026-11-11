@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import secrets
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -242,6 +243,11 @@ class Importer:
                                    "pasteType": "PASTE_NORMAL", "pasteOrientation": "NORMAL"}},
                 ])
                 if table.formula:
+                    # PASTE_NORMAL copies explicit empty strings too. They look blank but
+                    # block an ARRAYFORMULA spill, so truly clear A2:A AFTER the paste.
+                    requests.append({"updateCells": {"range": {"sheetId": sheet_id,
+                        "startRowIndex": 1, "endRowIndex": table.height,
+                        "startColumnIndex": 0, "endColumnIndex": 1}, "fields": "userEnteredValue"}})
                     requests.append({"updateCells": {"start": {"sheetId": sheet_id, "rowIndex": 1,
                         "columnIndex": 0}, "rows": [{"values": [{"userEnteredValue": {
                             "formulaValue": table.formula}}]}], "fields": "userEnteredValue"}})
@@ -251,6 +257,7 @@ class Importer:
             # Google validates/applies the whole batch atomically, including all 3 summary tabs.
             self.api.batch(self.target, requests)
             committed = True
+            self.verify_partner_columns(tables)
         finally:
             # Cleanup is separate from commit; a cleanup error must not report a successful import as failed.
             try:
@@ -263,4 +270,35 @@ class Importer:
                 LOG.exception("Staging belum terhapus; dibersihkan otomatis pada refresh berikutnya.")
         if committed:
             progress(phase="done", message="Semua mitra dan sheet gabungan sudah diperbarui")
+
+    def verify_partner_columns(self, tables):
+        partners = [table for table in tables if table.formula]
+        ranges, expected = [], []
+        for table in partners:
+            match = re.match(r'=ARRAYFORMULA\(IF\(([A-Z]+)2:', table.formula)
+            if not match:
+                raise ValueError(f"Pola formula MITRA tidak dikenali: {table.title}")
+            index = 0
+            for letter in match[1]:
+                index = index * 26 + ord(letter) - 64
+            name = re.sub(r"^data_", "", table.title, flags=re.IGNORECASE).upper()
+            expected.append([name if row[index - 1] not in ("", None) else "" for row in table.rows] or [""])
+            ranges.append(f"{quoted(table.title)}!A2:A{table.height}")
+        if not ranges:
+            return
+        failures = []
+        for attempt in range(3):
+            actual = self.api.read_many(self.target, ranges)
+            failures = []
+            for table, want, response in zip(partners, expected, actual):
+                got = [row[0] if row else "" for row in response.get("values", [])]
+                got += [""] * (len(want) - len(got))
+                if got != want:
+                    failures.append(table.title)
+            if len(actual) == len(partners) and not failures:
+                LOG.info("Verifikasi kolom MITRA berhasil pada %s tab.", len(partners))
+                return
+            time.sleep(attempt + 1)
+        raise ValueError("Verifikasi kolom MITRA gagal; periksa ARRAYFORMULA pada: " +
+                         ", ".join(failures or ["respons Google tidak lengkap"]))
 

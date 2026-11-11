@@ -9,6 +9,7 @@ Pengganti importer Apps Script untuk **Rekap Mitra FO dan RADIO 2026**. Jalankan
 - `DATA TIF FO`: **51 kolom**; `DATA TIF RADIO`: **57 kolom**; `DataDisatukan`: **17 kolom** yang sepadan di kedua format. Semua dipetakan lewat judul, bukan posisi kolom.
 - Data baru/bekas terhapus mengikuti sumber. Kolom yang tidak tersedia dikosongkan. Kolom tambahan sumber hanya disimpan di tab mitranya.
 - Kolom MITRA di tab mentah menggunakan ARRAYFORMULA berbasis SITE ID untuk FO dan HOP untuk RADIO. Sheet gabungan berisi hasil pemetaan, bukan IMPORTRANGE.
+- Setelah staging disalin, area spill MITRA benar-benar dikosongkan sebelum formula dipasang; seluruh hasil nama mitra diperiksa kembali sebelum job dinyatakan sukses. Ini mencegah `#REF!` akibat sel kosong semu dari hasil paste.
 - Sumber hanya **dibaca**. Hanya spreadsheet tujuan dalam config yang ditulis. ID tab tujuan yang sudah ada dipertahankan.
 - Opsional: [sinkronisasi COD 2026 dengan seluruh kolom/rumus bantu lama dipertahankan](docs/COD-2026.md). Gunakan `sync-cod --dry-run` sebelum mengaktifkan `MITRA_SYNC_COD=true`.
 - Semua sumber dibaca dahulu, lalu hasil diunggah ke tab staging tersembunyi. Setelah header diperiksa, hasil seluruh tab diganti dalam **satu batch atomik**. Jika pembacaan/upload staging gagal, isi hasil lama tetap utuh.
