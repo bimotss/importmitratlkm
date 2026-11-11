@@ -15,8 +15,12 @@ from .settings import Settings, load_config
 
 def make_importer(settings):
     api = GoogleSheets(settings.credentials_file, settings.requests_per_minute)
-    return Importer(api, load_config(settings.config_path), interval_seconds=settings.interval_seconds,
-                    public_url=settings.public_url)
+    importer = Importer(api, load_config(settings.config_path), interval_seconds=settings.interval_seconds,
+                        public_url=settings.public_url)
+    if settings.sync_cod:
+        from .cod import make_cod_sync
+        importer.cod_sync = make_cod_sync(settings, importer)
+    return importer
 
 
 def create_app(settings=None, worker=None):

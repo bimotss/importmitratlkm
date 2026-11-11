@@ -140,6 +140,7 @@ class Importer:
         self.api, self.config = api, config
         self.target = config["target_spreadsheet_id"]
         self.interval_seconds, self.public_url = interval_seconds, public_url
+        self.cod_sync = None
 
     def collect(self, progress):
         datasets = []
@@ -161,9 +162,15 @@ class Importer:
         datasets = self.collect(progress)
         tables, counts = build_tables(datasets, self.config, self.interval_seconds, self.public_url)
         if dry_run:
-            return {**counts, "dry_run": True, "sources": len(datasets), "tabs": len(tables)}
+            result = {**counts, "dry_run": True, "sources": len(datasets), "tabs": len(tables)}
+            if self.cod_sync:
+                result["cod"] = self.cod_sync.run(datasets, progress, dry_run=True)
+            return result
         self.publish(tables, progress)
-        return {**counts, "sources": len(datasets), "tabs": len(tables)}
+        result = {**counts, "sources": len(datasets), "tabs": len(tables)}
+        if self.cod_sync:
+            result["cod"] = self.cod_sync.run(datasets, progress)
+        return result
 
     def publish(self, tables, progress):
         meta = self.api.metadata(self.target)

@@ -18,6 +18,8 @@ def main():
     sub.add_parser("serve", help="Dashboard + jadwal otomatis setiap jam")
     once = sub.add_parser("once", help="Refresh satu kali dari terminal")
     once.add_argument("--dry-run", action="store_true", help="Baca dan validasi semua sumber tanpa menulis")
+    cod = sub.add_parser("sync-cod", help="Perbarui COD 2026 tanpa mengganti header/kolom/rumus bantu")
+    cod.add_argument("--dry-run", action="store_true", help="Periksa pemetaan COD tanpa menulis")
     sub.add_parser("check", help="Periksa akses tujuan + semua sumber tanpa menulis")
     auth = sub.add_parser("auth", help="Login Google sekali dari laptop; token dapat dipindahkan ke VPS")
     auth.add_argument("--client", required=True, type=Path, help="JSON OAuth client jenis Desktop app")
@@ -57,7 +59,11 @@ def main():
                 LOG.info("Akses baca tujuan OK. Memeriksa semua sumber; tidak ada sel yang diubah.")
                 result = importer.run(dry_run=True)
             else:
-                runner = JobRunner(settings, lambda: make_importer(settings))
+                if args.command == "sync-cod":
+                    from .cod import make_cod_importer
+                    runner = JobRunner(settings, lambda: make_cod_importer(settings))
+                else:
+                    runner = JobRunner(settings, lambda: make_importer(settings))
                 result = runner.run(dry_run=args.dry_run)
             print(json.dumps(result, indent=2))
     except BusyError as exc:

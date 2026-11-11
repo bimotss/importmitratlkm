@@ -80,6 +80,14 @@ class GoogleSheets:
             "ranges": ranges, "valueRenderOption": "UNFORMATTED_VALUE"
         }).get("valueRanges", [])
 
+    def cells(self, spreadsheet_id, a1, *, effective=False):
+        fields = "userEnteredValue,effectiveValue" if effective else "userEnteredValue"
+        result = self.request("GET", spreadsheet_id, params={
+            "ranges": a1, "includeGridData": "true",
+            "fields": f"sheets(data(startRow,startColumn,rowData(values({fields}))))"
+        })
+        return result["sheets"][0].get("data", [{}])[0].get("rowData", [])
+
     def write(self, spreadsheet_id, a1, values):
         # RAW preserves strings beginning with '=' as text, including source notes.
         return self.request("PUT", spreadsheet_id, "/values/" + quote(a1, safe=""),

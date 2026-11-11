@@ -10,6 +10,7 @@ Pengganti importer Apps Script untuk **Rekap Mitra FO dan RADIO 2026**. Jalankan
 - Data baru/bekas terhapus mengikuti sumber. Kolom yang tidak tersedia dikosongkan. Kolom tambahan sumber hanya disimpan di tab mitranya.
 - Kolom MITRA di tab mentah menggunakan ARRAYFORMULA berbasis SITE ID untuk FO dan HOP untuk RADIO. Sheet gabungan berisi hasil pemetaan, bukan IMPORTRANGE.
 - Sumber hanya **dibaca**. Hanya spreadsheet tujuan dalam config yang ditulis. ID tab tujuan yang sudah ada dipertahankan.
+- Opsional: [sinkronisasi COD 2026 dengan seluruh kolom/rumus bantu lama dipertahankan](docs/COD-2026.md). Gunakan `sync-cod --dry-run` sebelum mengaktifkan `MITRA_SYNC_COD=true`.
 - Semua sumber dibaca dahulu, lalu hasil diunggah ke tab staging tersembunyi. Setelah header diperiksa, hasil seluruh tab diganti dalam **satu batch atomik**. Jika pembacaan/upload staging gagal, isi hasil lama tetap utuh.
 
 ## 1. Instal di laptop dan siapkan akses Google

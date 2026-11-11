@@ -19,6 +19,9 @@ class Settings:
     admin_password: str = ""
     public_url: str = "http://localhost:8080"
     requests_per_minute: int = 45
+    cod_profile: Path = Path("config/cod2026.json")
+    sync_cod: bool = False
+    cod_backup_keep: int = 24
 
     @classmethod
     def load(cls):
@@ -35,6 +38,9 @@ class Settings:
             admin_password=os.getenv("MITRA_ADMIN_PASSWORD", ""),
             public_url=os.getenv("MITRA_PUBLIC_URL", "http://localhost:8080").rstrip("/"),
             requests_per_minute=int(os.getenv("MITRA_API_REQUESTS_PER_MINUTE", "45")),
+            cod_profile=Path(os.getenv("MITRA_COD_PROFILE", "config/cod2026.json")).resolve(),
+            sync_cod=os.getenv("MITRA_SYNC_COD", "false").lower() == "true",
+            cod_backup_keep=int(os.getenv("MITRA_COD_BACKUP_KEEP", "24")),
         )
         if s.interval_seconds < 60:
             raise ValueError("MITRA_INTERVAL_SECONDS minimal 60 detik.")
