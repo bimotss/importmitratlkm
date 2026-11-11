@@ -134,3 +134,20 @@ def test_dry_run_performs_zero_writes(setup):
     assert result["dry_run"] is True
     assert api.batches == [] and api.writes == []
 
+
+def test_hourly_cod_hook_reads_rekap_only_after_rekap_publish(setup):
+    from types import SimpleNamespace
+    _, api, importer = setup
+    calls = []
+
+    def refresh(progress, *, dry_run=False):
+        assert not dry_run
+        assert by_title(api, "DATA TIF FO")["values"][0][0] == "MITRA"
+        calls.append("read_rekap")
+        return {"preserve_columns": True}
+
+    importer.cod_sync = SimpleNamespace(refresh_from_rekap=refresh)
+    result = importer.run()
+    assert result["cod"]["preserve_columns"] is True
+    assert calls == ["read_rekap"]
+

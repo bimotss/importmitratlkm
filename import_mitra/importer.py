@@ -164,12 +164,12 @@ class Importer:
         if dry_run:
             result = {**counts, "dry_run": True, "sources": len(datasets), "tabs": len(tables)}
             if self.cod_sync:
-                result["cod"] = self.cod_sync.run(datasets, progress, dry_run=True)
+                result["cod"] = self.cod_sync.refresh_from_rekap(progress, dry_run=True)
             return result
         self.publish(tables, progress)
         result = {**counts, "sources": len(datasets), "tabs": len(tables)}
         if self.cod_sync:
-            result["cod"] = self.cod_sync.run(datasets, progress)
+            result["cod"] = self.cod_sync.refresh_from_rekap(progress)
         return result
 
     def publish(self, tables, progress):

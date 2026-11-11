@@ -10,10 +10,49 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from .importer import value_chunks
-from .mapping import canonical, col, norm, quoted
+from .mapping import canonical, col, norm, parse_source, quoted
 
 LOG = logging.getLogger(__name__)
 STAGE = re.compile(r"^_IMCOD_[a-f0-9]{12}_[012]$")
+
+
+class CODRekapReader:
+    """Read only the existing rekap workbook, never the original partner files."""
+    def __init__(self, api, config, profile):
+        self.api, self.config = api, config
+        self.source = profile["source_spreadsheet_id"]
+        self.stamp = None
+
+    def refresh_stamp(self):
+        rows = self.api.read(self.source, "'Kontrol'!A1:B8")
+        for row in rows:
+            if row and norm(row[0]) == "TERAKHIRSELESAI" and len(row) > 1 and row[1]:
+                return row[1]
+        raise ValueError("File Rekap Mitra belum mempunyai refresh selesai; perbarui rekap dahulu.")
+
+    def collect(self, progress=lambda **kwargs: None):
+        LOG.info("COD: sumber data adalah file Rekap Mitra %s", self.source)
+        meta = self.api.metadata(self.source)
+        names = {s["properties"]["title"] for s in meta["sheets"]}
+        required = {s["title"] for s in self.config["sources"]} | {"Kontrol"}
+        if missing := required - names:
+            raise ValueError("Tab sumber di file Rekap Mitra tidak lengkap: " + ", ".join(sorted(missing)))
+        self.stamp = self.refresh_stamp()
+        datasets = []
+        sources = self.config["sources"]
+        for i, original in enumerate(sources):
+            # Partner tabs in the REKAP retain fields needed by COD (REG, activation number, etc.)
+            # that are absent from the narrower 51/57-column summary tabs.
+            source = {**original, "id": self.source, "sheet": original["title"], "start": 2}
+            LOG.info("COD [%s/%s] Membaca tab %s dari file Rekap Mitra", i + 1, len(sources), source["title"])
+            progress(phase="cod_reading_rekap", message=f"COD: membaca {source['title']} dari Rekap Mitra",
+                     source=source["title"], completed_sources=i, total_sources=len(sources))
+            values = self.api.read(self.source, quoted(source["sheet"]))
+            datasets.append(parse_source(values, source, self.config["aliases"]))
+        if self.refresh_stamp() != self.stamp:
+            raise ValueError("Rekap Mitra berubah saat dibaca; ulangi sinkronisasi agar snapshot konsisten.")
+        progress(completed_sources=len(sources))
+        return datasets
 
 
 def business_key(values):
@@ -110,8 +149,15 @@ class CODSync:
         self.api, self.config, self.profile = api, config, profile
         self.target, self.state_dir = profile["spreadsheet_id"], state_dir
         self.backup_keep = max(1, backup_keep)
-        if self.target == config["target_spreadsheet_id"]:
+        if self.target == profile["source_spreadsheet_id"]:
             raise ValueError("COD dan file rekap harus berbeda.")
+
+    def refresh_from_rekap(self, progress=lambda **kwargs: None, *, dry_run=False):
+        reader = CODRekapReader(self.api, self.config, self.profile)
+        datasets = reader.collect(progress)
+        result = self.run(datasets, progress, dry_run=dry_run)
+        return {**result, "source_spreadsheet_id": reader.source, "source_updated_at": reader.stamp,
+                "sources": len(datasets)}
 
     def heads(self):
         meta = self.api.metadata(self.target)
@@ -313,15 +359,14 @@ class CODSync:
 
 
 class CODImporter:
-    """JobRunner adapter sharing the existing lock, credentials and source reader."""
-    def __init__(self, importer, sync):
-        self.importer, self.sync = importer, sync
+    """JobRunner adapter sharing the lock; its only input workbook is the rekap."""
+    def __init__(self, sync):
+        self.sync = sync
 
     def run(self, progress=lambda **kwargs: None, *, dry_run=False):
-        datasets = self.importer.collect(progress)
-        result = self.sync.run(datasets, progress, dry_run=dry_run)
+        result = self.sync.refresh_from_rekap(progress, dry_run=dry_run)
         return {"fo": result["fo"]["rows"], "radio": result["radio"]["rows"], "total": result["total"],
-                "sources": len(datasets), "tabs": 3, "dry_run": dry_run, "cod": result}
+                "sources": result["sources"], "tabs": 3, "dry_run": dry_run, "cod": result}
 
 
 def make_cod_sync(settings, importer):
@@ -332,4 +377,4 @@ def make_cod_sync(settings, importer):
 def make_cod_importer(settings):
     from .web import make_importer
     importer = make_importer(settings)
-    return CODImporter(importer, make_cod_sync(settings, importer))
+    return CODImporter(make_cod_sync(settings, importer))

@@ -1,6 +1,7 @@
 Perbarui importer di /opt/import-mitra agar juga memperbarui tiga tab COD 2026 tanpa mengubah kolom. Repository: https://github.com/bimotss/importmitratlkm (branch main). Baca docs/COD-2026.md sebelum menjalankan.
 
 Target COD: 1pJUhUZ4BkH0zJHdgE-I2ZzMcOFV7nleEdtXE7pDEOIk.
+Sumber COD HARUS file Rekap Mitra yang sudah dibuat: 1S9N054PUATRPPFpAVuZoAuKgBCmuNEYfLuUuCM8c-64. Alur file mitra → Rekap → COD. Jangan membaca file asli masing-masing mitra saat menjalankan sync-cod. Pembacaan tab mitra dilakukan di DALAM file Rekap agar kolom tambahan tetap tersedia. Periksa source_spreadsheet_id pada hasil dry-run.
 - Data TIF FO: 104 kolom, sheet ID 1848249070.
 - Data TIF Radio: 89 kolom, sheet ID 274869417.
 - DataDisatukan: 58 kolom, sheet ID 2012234710.

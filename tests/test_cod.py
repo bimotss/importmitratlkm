@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from import_mitra.cod import CODImporter, CODSync, column_runs, keep_row_positions, remap_extra_values
+from import_mitra.cod import (
+    CODImporter,
+    CODRekapReader,
+    CODSync,
+    column_runs,
+    keep_row_positions,
+    remap_extra_values,
+)
 from import_mitra.mapping import parse_source
 from import_mitra.settings import load_config
 
@@ -172,11 +179,11 @@ def test_contiguous_column_copy_ranges():
     assert column_runs([2, 3, 4, 64, 71, 77]) == [(0, 1, 3), (3, 63, 1), (4, 70, 1), (5, 76, 1)]
 
 
-def test_standalone_cod_job_keeps_dashboard_metric_shape(setup):
-    from types import SimpleNamespace
+def test_standalone_cod_job_keeps_dashboard_metric_shape(setup, monkeypatch):
     sync, _, datasets = setup
-    reader = SimpleNamespace(collect=lambda progress: datasets)
-    result = CODImporter(reader, sync).run(dry_run=True)
+    monkeypatch.setattr(sync, "refresh_from_rekap", lambda progress, dry_run: {
+        **sync.run(datasets, progress, dry_run=dry_run), "sources": len(datasets)})
+    result = CODImporter(sync).run(dry_run=True)
     assert result["fo"] == 2 and result["radio"] == 2 and result["total"] == 4
     assert result["cod"]["columns"] == {"fo": 104, "radio": 89, "all": 58}
 
@@ -195,3 +202,55 @@ def test_header_race_after_staging_aborts_before_live_write(setup):
         sync.publish(meta, heads, plans, lambda **kwargs: None)
     assert not any("updateCells" in r for r in api.requests)
     assert not api.stages
+
+
+class RekapSourceAPI:
+    def __init__(self, config, profile):
+        self.source = profile["source_spreadsheet_id"]
+        self.config = config
+        self.calls, self.stamp_reads = [], 0
+        self.change_stamp = False
+
+    def metadata(self, target):
+        assert target == self.source
+        self.calls.append(target)
+        names = [s["title"] for s in self.config["sources"]] + ["Kontrol"]
+        return {"sheets": [{"properties": {"title": title}} for title in names]}
+
+    def read(self, target, a1):
+        assert target == self.source  # any direct call to a partner's original file fails the test
+        self.calls.append(target)
+        if a1 == "'Kontrol'!A1:B8":
+            self.stamp_reads += 1
+            stamp = "NEW" if self.change_stamp and self.stamp_reads > 1 else "11/11/2026 09:00:00"
+            return [["TERAKHIR SELESAI", stamp]]
+        if a1 == "'bto'":
+            return [["MITRA", "SITE ID", "SP", "REG", "Customer OLO"],
+                    ["BTO", "F1", "SP1", "TREG1", "Original extra field"]]
+        assert a1 == "'pst_radio'"
+        return [["MITRA", "NE ID", "HOP", "WO/SP"], ["PST_RADIO", "R1", "H1", "SP1"]]
+
+
+def test_cod_reader_only_queries_the_previously_created_rekap_file():
+    config = load_config(ROOT / "config/mitra.json")
+    config["sources"] = [config["sources"][0], config["sources"][27]]
+    profile = json.loads((ROOT / "config/cod2026.json").read_text())
+    api = RekapSourceAPI(config, profile)
+    reader = CODRekapReader(api, config, profile)
+    datasets = reader.collect()
+    assert len(datasets) == 2
+    assert len(datasets[0].rows) == 1  # source BTO's old start=3 must become 2 in the rekap
+    assert "REG" in datasets[0].keys  # preserve fields omitted by the narrower summary tabs
+    assert all(d.config["id"] == profile["source_spreadsheet_id"] for d in datasets)
+    assert set(api.calls) == {profile["source_spreadsheet_id"]}
+    assert reader.stamp == "11/11/2026 09:00:00"
+
+
+def test_cod_reader_rejects_mixed_refresh_snapshots():
+    config = load_config(ROOT / "config/mitra.json")
+    config["sources"] = [config["sources"][0], config["sources"][27]]
+    profile = json.loads((ROOT / "config/cod2026.json").read_text())
+    api = RekapSourceAPI(config, profile)
+    api.change_stamp = True
+    with pytest.raises(ValueError, match="berubah saat dibaca"):
+        CODRekapReader(api, config, profile).collect()
