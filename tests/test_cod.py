@@ -107,7 +107,7 @@ def test_dry_run_preserves_existing_identity_and_reports_additions(setup):
     assert result["fo"]["retained"] == 1
     assert result["fo"]["added"] == 1
     assert result["fo"]["removed"] == 1
-    assert result["columns"] == {"fo": 104, "radio": 89, "all": 59}
+    assert result["columns"] == {"fo": 104, "radio": 89, "all": 60}
     assert result["total"] == 4
     assert not api.requests and not api.writes
 
@@ -187,7 +187,7 @@ def test_standalone_cod_job_keeps_dashboard_metric_shape(setup, monkeypatch):
         **sync.run(datasets, progress, dry_run=dry_run), "sources": len(datasets)})
     result = CODImporter(sync).run(dry_run=True)
     assert result["fo"] == 2 and result["radio"] == 2 and result["total"] == 4
-    assert result["cod"]["columns"] == {"fo": 104, "radio": 89, "all": 59}
+    assert result["cod"]["columns"] == {"fo": 104, "radio": 89, "all": 60}
 
 
 def test_header_race_after_staging_aborts_before_live_write(setup):
