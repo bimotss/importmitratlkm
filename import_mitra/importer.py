@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from .google_api import SHEET_CELL_LIMIT
 from .mapping import canonical, col, norm, parse_source, partner_formula, project, quoted
 
 LOG = logging.getLogger(__name__)
@@ -43,16 +44,16 @@ def value_chunks(rows, max_bytes=1_500_000, max_cells=40_000):
         yield start, batch
 
 
-def build_tables(datasets, config, interval_seconds=3600, public_url=""):
+def build_tables(datasets, config, interval_seconds=3600, public_url="", aging_tracker=None):
     aliases, schemas = config["aliases"], config["schemas"]
     fo, radio, combined, tables, audit = [], [], [], [], []
     now = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%d/%m/%Y %H:%M:%S")
     for data in datasets:
         group = data.config["group"].lower()
         group_headers = schemas[group]
-        normalized = project(data, group_headers, aliases)
+        normalized = project(data, group_headers, aliases, aging_tracker=aging_tracker)
         (fo if group == "fo" else radio).extend(normalized)
-        combined.extend(project(data, schemas["all"], aliases))
+        combined.extend(project(data, schemas["all"], aliases, aging_tracker=aging_tracker))
         tables.append(Table(data.config["title"], ["MITRA"] + data.headers,
                             [[""] + row for row in data.rows], partner_formula(data)))
         target_keys = [norm(canonical(h, data.config["group"], aliases)) for h in group_headers]
@@ -137,10 +138,19 @@ def formatting(sheet_id, table):
 
 
 class Importer:
-    def __init__(self, api, config, *, interval_seconds=3600, public_url=""):
+    def __init__(self, api, config, *, interval_seconds=3600, public_url="", state_dir=None, aging_tracker=None):
+        from pathlib import Path
         self.api, self.config = api, config
         self.target = config["target_spreadsheet_id"]
         self.interval_seconds, self.public_url = interval_seconds, public_url
+        self.state_dir = Path(state_dir) if state_dir else None
+        if aging_tracker is not None:
+            self.aging_tracker = aging_tracker
+        elif self.state_dir:
+            from .aging import AgingTracker
+            self.aging_tracker = AgingTracker(self.state_dir / "aging-state.json")
+        else:
+            self.aging_tracker = None
         self.cod_sync = None
 
     def collect(self, progress):
@@ -161,13 +171,18 @@ class Importer:
 
     def run(self, progress=lambda **kwargs: None, *, dry_run=False):
         datasets = self.collect(progress)
-        tables, counts = build_tables(datasets, self.config, self.interval_seconds, self.public_url)
+        tables, counts = build_tables(datasets, self.config, self.interval_seconds, self.public_url,
+                                      aging_tracker=self.aging_tracker)
+        if self.cod_sync and self.aging_tracker and not getattr(self.cod_sync, "aging_tracker", None):
+            self.cod_sync.aging_tracker = self.aging_tracker
         if dry_run:
             result = {**counts, "dry_run": True, "sources": len(datasets), "tabs": len(tables)}
             if self.cod_sync:
                 result["cod"] = self.cod_sync.refresh_from_rekap(progress, dry_run=True)
             return result
         self.publish(tables, progress)
+        if self.aging_tracker:
+            self.aging_tracker.save()
         result = {**counts, "sources": len(datasets), "tabs": len(tables)}
         if self.cod_sync:
             result["cod"] = self.cod_sync.refresh_from_rekap(progress)
@@ -187,8 +202,8 @@ class Importer:
         # Include space for any output tabs not created yet.
         names = {p["title"]: p for p in properties}
         missing = [t for t in tables if t.title not in names]
-        if grid_cells + stage_cells + sum(t.height * len(t.headers) for t in missing) > 10_000_000:
-            raise ValueError("Ruang Google Sheet tidak cukup untuk staging aman (batas 10 juta sel).")
+        if grid_cells + stage_cells + sum(t.height * len(t.headers) for t in missing) > SHEET_CELL_LIMIT:
+            raise ValueError("Ruang Google Sheet tidak cukup untuk staging aman (batas 20 juta sel).")
         used = {p["sheetId"] for p in properties}
 
         def new_id():

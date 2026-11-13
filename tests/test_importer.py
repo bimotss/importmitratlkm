@@ -123,7 +123,7 @@ def test_staged_commit_preserves_tab_ids_and_unrelated_content(setup):
     assert by_title(api, "DATA TIF FO")["properties"]["sheetId"] == 10
     assert by_title(api, "DATA TIF FO")["properties"]["gridProperties"]["columnCount"] == 51
     assert by_title(api, "DATA TIF RADIO")["properties"]["gridProperties"]["columnCount"] == 57
-    assert by_title(api, "DataDisatukan")["properties"]["gridProperties"]["columnCount"] == 17
+    assert by_title(api, "DataDisatukan")["properties"]["gridProperties"]["columnCount"] == 19
     assert by_title(api, "Unrelated")["values"] == [["KEEP"]]
     assert not any(s["properties"]["title"].startswith("_IM_STAGING_") for s in api.sheets.values())
     commits = [batch for batch in api.batches if any("copyPaste" in r for r in batch)]
@@ -205,3 +205,29 @@ def test_bad_partner_names_cannot_be_reported_as_success(setup, monkeypatch):
     with pytest.raises(ValueError, match="Verifikasi kolom MITRA gagal"):
         importer.verify_partner_columns(tables)
 
+
+
+def test_aging_state_only_saved_after_successful_publish(setup, tmp_path):
+    from datetime import date
+
+    from import_mitra.aging import AgingTracker
+
+    config, api, importer = setup
+    state = tmp_path / "aging-state.json"
+    importer.aging_tracker = AgingTracker(state, today=date(2026, 11, 13))
+    fo_id = config["sources"][0]["id"]
+    api.sources[fo_id] = [["SITE ID", "SP", "STATUS VERIFIKASI COD", "TGL INHAND"],
+                          ["F-1", "SP-2026", "08.RFS", "01/11/2026"]]
+    importer.run(dry_run=True)
+    assert not state.exists()
+    assert not api.writes and not api.batches
+    api.fail_commit = True
+    with pytest.raises(RuntimeError, match="commit"):
+        importer.run()
+    assert not state.exists()
+    api.fail_commit = False
+    importer.run()
+    assert state.exists()
+    assert state.stat().st_mode & 0o777 == 0o600
+    fo = by_title(api, "DATA TIF FO")["values"]
+    assert fo[1][fo[0].index("Aging Progress")] == 12

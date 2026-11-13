@@ -9,8 +9,9 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 
+from .google_api import SHEET_CELL_LIMIT
 from .importer import value_chunks
-from .mapping import canonical, col, norm, parse_source, quoted
+from .mapping import canonical, col, norm, parse_source, project, quoted
 
 LOG = logging.getLogger(__name__)
 STAGE = re.compile(r"^_IMCOD_[a-f0-9]{12}_[012]$")
@@ -78,21 +79,28 @@ def keep_row_positions(records, old_keys):
             consumed.add(index)
             retained += 1
     existing = sum(k is not None for k in old_keys)
-    if existing and retained < existing / 2:
-        raise ValueError(f"Hanya {retained}/{existing} kunci lama cocok; hentikan untuk memeriksa pemetaan.")
+    # Repeated legacy rows must not inflate the identity-drift denominator.
+    # Queues still retain genuine repeated records in their original order.
+    existing_unique = {k for k in old_keys if k is not None}
+    retained_unique = {records[i]["key"] for i in consumed}
+    if existing_unique and len(retained_unique) < len(existing_unique) / 2:
+        raise ValueError(f"Hanya {len(retained_unique)}/{len(existing_unique)} kunci lama (unik) cocok; "
+                         "hentikan untuk memeriksa pemetaan.")
     added = [record for i, record in enumerate(records) if i not in consumed]
     slots.extend(added)
     return slots, {"retained": retained, "added": len(added), "removed": existing - retained,
                    "rows": len(records), "last_row": len(slots) + 1, "append_start": last + 2}
 
 
-def project_records(datasets, spec, aliases, group):
+def project_records(datasets, spec, aliases, group, aging_tracker=None):
     records = []
     available = set()
     for data in datasets:
         if data.config["group"] != group:
             continue
-        for row in data.rows:
+        aging_rows = project(data, ["Tanggal Ganti Flagging", "Aging Progress", "Grouping Aging Progress"],
+                             aliases, aging_tracker=aging_tracker) if aging_tracker is not None else [None] * len(data.rows)
+        for row, aging in zip(data.rows, aging_rows):
             fields = {norm(k): row[i] for i, k in enumerate(data.keys)}
             fields["MITRA"] = data.name
             available.update(fields)
@@ -107,10 +115,23 @@ def project_records(datasets, spec, aliases, group):
             first = value("HOP") if group == "RADIO" else site
             if first in (None, ""):
                 raise ValueError(f"{data.config['title']}: kunci SITE ID / HOP kosong; perlu diperiksa.")
-            records.append({"key": business_key([first, sp, data.name]), "values": values,
+            rec_key = business_key([first, sp, data.name])
+
+            if aging is not None:
+                computed = {88: aging[1]} if group == "FO" else dict(zip((51, 52, 53), aging))
+                for number, result in computed.items():
+                    if number in spec["managed_columns"]:
+                        values[spec["managed_columns"].index(number)] = result
+
+            records.append({"key": rec_key, "values": values,
                             "combined_key": business_key([site, sp, data.name])})
     missing = []
     for number in spec["managed_columns"]:
+        if aging_tracker is not None:
+            if group == "FO" and number == 88:
+                continue
+            if group == "RADIO" and number in (51, 52, 53):
+                continue
         candidates = spec.get("overrides", {}).get(str(number), [spec["headers"][number - 1]])
         if not any(norm(canonical(h, group, aliases)) in available for h in candidates):
             missing.append(spec["headers"][number - 1])
@@ -126,6 +147,42 @@ def column_runs(columns):
         else:
             runs.append((source, target - 1, 1))
     return runs
+
+
+def blank_row_runs(records):
+    """Zero-based native row intervals, excluding the header."""
+    runs = []
+    for row, record in enumerate(records, 1):
+        if record is not None:
+            continue
+        if runs and runs[-1][1] == row:
+            runs[-1] = (runs[-1][0], row + 1)
+        else:
+            runs.append((row, row + 1))
+    return runs
+
+
+def spill_formula(formula):
+    return formula.lstrip().startswith("={") or bool(re.search(
+        r"\b(ARRAYFORMULA|LET|MAP|FILTER|QUERY|SCAN|BYROW|BYCOL|VSTACK|HSTACK|SORT|UNIQUE|SEQUENCE|MAKEARRAY)\s*\(",
+        formula, re.IGNORECASE))
+
+
+def cod_number_formats(spec, height):
+    """Correct known stale template formats without changing values or layout."""
+    requests = []
+    if spec["title"] == "Data TIF FO":
+        for column, kind, pattern in ((17, "NUMBER", "#,##0.00"),
+                                      (18, "NUMBER", "#,##0.00"),
+                                      (19, "PERCENT", "0.0%"),
+                                      (22, "TEXT", "@")):
+            requests.append({"repeatCell": {"range": {
+                "sheetId": spec["sheet_id"], "startRowIndex": 1, "endRowIndex": height,
+                "startColumnIndex": column - 1, "endColumnIndex": column},
+                "cell": {"userEnteredFormat": {"numberFormat": {"type": kind, "pattern": pattern}}},
+                "fields": "userEnteredFormat.numberFormat"}})
+    return requests
+
 
 
 def remap_extra_values(old_keys, entered_rows, new_keys, width):
@@ -145,10 +202,17 @@ def remap_extra_values(old_keys, entered_rows, new_keys, width):
 
 
 class CODSync:
-    def __init__(self, api, config, profile, state_dir, backup_keep=24):
+    def __init__(self, api, config, profile, state_dir, backup_keep=24, aging_tracker=None):
         self.api, self.config, self.profile = api, config, profile
         self.target, self.state_dir = profile["spreadsheet_id"], state_dir
         self.backup_keep = max(1, backup_keep)
+        if aging_tracker is not None:
+            self.aging_tracker = aging_tracker
+        elif self.state_dir:
+            from .aging import AgingTracker
+            self.aging_tracker = AgingTracker(self.state_dir / "aging-state.json")
+        else:
+            self.aging_tracker = None
         if self.target == profile["source_spreadsheet_id"]:
             raise ValueError("COD dan file rekap harus berbeda.")
 
@@ -162,6 +226,7 @@ class CODSync:
     def heads(self):
         meta = self.api.metadata(self.target)
         by_name = {s["properties"]["title"]: s["properties"] for s in meta["sheets"]}
+        filters = {s["properties"]["title"]: s.get("basicFilter") for s in meta["sheets"]}
         heads = {}
         for key, spec in self.profile["groups"].items():
             p = by_name.get(spec["title"])
@@ -177,6 +242,7 @@ class CODSync:
             if labels != spec["headers"]:
                 raise ValueError(f"Judul/urutan kolom berubah pada {spec['title']}; tidak menulis data.")
             heads[key] = {"properties": p, "header_cells": header_cells,
+                          "basic_filter": filters.get(spec["title"]),
                           "templates": rows[1].get("values", []) if len(rows) > 1 else []}
         return meta, heads
 
@@ -200,7 +266,8 @@ class CODSync:
         plans, summary = {}, {}
         for key in ("fo", "radio"):
             spec = self.profile["groups"][key]
-            records, missing = project_records(datasets, spec, self.config["aliases"], key.upper())
+            records, missing = project_records(datasets, spec, self.config["aliases"], key.upper(),
+                                               aging_tracker=self.aging_tracker)
             slots, stats = keep_row_positions(records, old[key])
             plans[key] = {"rows": [r["values"] if r else [""] * len(spec["managed_columns"]) for r in slots],
                           "records": slots, "stats": stats}
@@ -233,7 +300,8 @@ class CODSync:
         with os.fdopen(fd, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb") as stream:
             def save(record):
                 stream.write((json.dumps(record, ensure_ascii=False) + "\n").encode())
-            save({"profile": self.profile, "properties": {k: h["properties"] for k, h in heads.items()}})
+            save({"profile": self.profile, "properties": {k: h["properties"] for k, h in heads.items()},
+                  "basic_filters": {k: h.get("basic_filter") for k, h in heads.items()}})
             for key, spec in self.profile["groups"].items():
                 height = heads[key]["properties"]["gridProperties"]["rowCount"]
                 LOG.info("Backup COD: %s", spec["title"])
@@ -246,6 +314,44 @@ class CODSync:
             old.unlink()
         return str(completed)
 
+    def compact(self, heads, plans, progress=lambda **kwargs: None):
+        """Delete empty slots as whole native rows so notes and references move together."""
+        requests, result = [], {}
+        for key in ("fo", "radio"):
+            spec = self.profile["groups"][key]
+            records = plans[key]["records"]
+            runs = blank_row_runs(records)
+            count = sum(end - start for start, end in runs)
+            active = sum(r is not None for r in records)
+            for start, end in reversed(runs):
+                requests.append({"deleteDimension": {"range": {
+                    "sheetId": spec["sheet_id"], "dimension": "ROWS",
+                    "startIndex": start, "endIndex": end}}})
+            if runs and runs[0][0] == 1:
+                # Deleting the first data row also removes its spill anchors.
+                # Ordinary per-record formulas already move natively with their row.
+                for index, cell in enumerate(heads[key]["templates"]):
+                    formula = cell.get("userEnteredValue", {}).get("formulaValue", "")
+                    if index + 1 in spec["managed_columns"] or not spill_formula(formula):
+                        continue
+                    requests.append({"updateCells": {"range": {
+                        "sheetId": spec["sheet_id"], "startRowIndex": 1, "endRowIndex": 2,
+                        "startColumnIndex": index, "endColumnIndex": index + 1},
+                        "rows": [{"values": [{"userEnteredValue": {"formulaValue": formula}}]}],
+                        "fields": "userEnteredValue"}})
+            basic_filter = heads[key].get("basic_filter")
+            if basic_filter:
+                requests.append({"setBasicFilter": {"filter": {
+                    **basic_filter, "range": {**basic_filter["range"], "endRowIndex": max(2, active + 1)}}}})
+            result[key] = {"compacted_blank_rows": count, "last_row": active + 1}
+        if requests:
+            progress(phase="cod_compacting", message="Merapikan baris kosong dan mempertahankan catatan per site")
+            # A timed-out structural write must be inspected, never blindly replayed.
+            self.api.batch(self.target, requests, idempotent=False)
+        for key, stats in result.items():
+            plans[key]["stats"].update(stats)
+        return result
+
     def run(self, datasets, progress=lambda **kwargs: None, *, dry_run=False):
         progress(phase="cod_planning", message="Memeriksa kolom dan rumus COD 2026")
         meta, heads, plans, summary = self.prepare(datasets)
@@ -254,18 +360,27 @@ class CODSync:
         progress(phase="cod_backup", message="Menyimpan backup COD sebelum pembaruan")
         summary["backup"] = self.backup(heads)
         self.publish(meta, heads, plans, progress)
+        for key, stats in self.compact(heads, plans, progress).items():
+            summary[key].update(stats)
         # Native formulas may require a short recalculation delay.
         ranges = []
         for key, c in (("fo", 2), ("radio", 11), ("all", 1)):
             spec = self.profile["groups"][key]
-            end = max(plans[key]["stats"]["last_row"], heads[key]["properties"]["gridProperties"]["rowCount"])
+            remaining_grid = (heads[key]["properties"]["gridProperties"]["rowCount"]
+                              - plans[key]["stats"].get("compacted_blank_rows", 0))
+            end = max(plans[key]["stats"]["last_row"], remaining_grid, 2)
             ranges.append(f"{quoted(spec['title'])}!{col(c)}2:{col(c)}{end}")
         expected = [summary["fo"]["rows"], summary["radio"]["rows"], summary["total"]]
         for attempt in range(4):
             self.heads()
             actual = self.api.read_many(self.target, ranges)
             counts = [sum(bool(r and r[0] not in (None, "")) for r in v.get("values", [])) for v in actual]
-            if counts == expected:
+            contiguous = all(len(v.get("values", [])) >= count and
+                             all(r and r[0] not in (None, "") for r in v.get("values", [])[:count])
+                             for v, count in zip(actual, expected))
+            if counts == expected and contiguous:
+                if not dry_run and self.aging_tracker:
+                    self.aging_tracker.save()
                 LOG.info("COD selesai: FO %s, RADIO %s, total %s; semua kolom tetap.", *counts)
                 return summary
             time.sleep(3 * (attempt + 1))
@@ -290,7 +405,7 @@ class CODSync:
         staging_cells = sum(p["gridProperties"]["rowCount"] * p["gridProperties"]["columnCount"] for p in stages.values())
         growth = sum(max(0, plans[k]["stats"]["last_row"] - heads[k]["properties"]["gridProperties"]["rowCount"])
                      * len(s["headers"]) for k, s in self.profile["groups"].items())
-        if allocated + staging_cells + growth > 10_000_000:
+        if allocated + staging_cells + growth > SHEET_CELL_LIMIT:
             raise ValueError("COD tidak cukup ruang untuk staging; tidak mengubah data.")
         try:
             self.api.batch(self.target, [{"addSheet": {"properties": p}} for p in stages.values()], idempotent=False)
@@ -321,6 +436,12 @@ class CODSync:
                 if height > old_height:
                     requests.append({"updateSheetProperties": {"properties": {"sheetId": sid,
                         "gridProperties": {"rowCount": height}}, "fields": "gridProperties.rowCount"}})
+                requests.extend(cod_number_formats(spec, height))
+                basic_filter = heads[key].get("basic_filter")
+                if basic_filter and basic_filter["range"].get("endRowIndex", height) < height:
+                    # Retain the user's sort/criteria while including appended records.
+                    requests.append({"setBasicFilter": {"filter": {
+                        **basic_filter, "range": {**basic_filter["range"], "endRowIndex": height}}}})
                 for source, dest, length in column_runs(spec["managed_columns"]):
                     area = {"sheetId": sid, "startRowIndex": 1, "endRowIndex": height,
                             "startColumnIndex": dest, "endColumnIndex": dest + length}
@@ -371,7 +492,9 @@ class CODImporter:
 
 def make_cod_sync(settings, importer):
     profile = json.loads(settings.cod_profile.read_text())
-    return CODSync(importer.api, importer.config, profile, settings.state_dir, settings.cod_backup_keep)
+    aging_tracker = getattr(importer, "aging_tracker", None)
+    return CODSync(importer.api, importer.config, profile, settings.state_dir, settings.cod_backup_keep,
+                   aging_tracker=aging_tracker)
 
 
 def make_cod_importer(settings):

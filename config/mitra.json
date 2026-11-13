@@ -20,7 +20,11 @@
       "id": "1N5zLUMhUhTkhSb1zamkztcYqGWkaq8JEziu4gKTZhrU",
       "group": "FO",
       "sheet": "TIF ORDER",
-      "start": 4
+      "start": 4,
+      "header_aliases": {
+        "SUBSTATUS": "STATUS VERIFIKASI COD"
+      },
+      "required_headers": ["STATUS VERIFIKASI COD"]
     },
     {
       "title": "data_ADYAWINSA",
@@ -358,6 +362,7 @@
       "FO/Radio",
       "NO",
       "SITE ID",
+      "HOP",
       "SITE NAME",
       "SP",
       "REGIONAL TIF",
@@ -366,6 +371,7 @@
       "TEMATIK",
       "NILAI DRM/WO",
       "NILAI REKON/REVIEW",
+      "FLAGGING FO/RADIO",
       "KETERANGAN UPDATE",
       "PLAN RFS",
       "Progress Cut Off",

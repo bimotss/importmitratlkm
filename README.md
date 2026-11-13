@@ -6,7 +6,7 @@ Pengganti importer Apps Script untuk **Rekap Mitra FO dan RADIO 2026**. Jalankan
 - Dashboard dengan tombol **Refresh sekarang**, status/progres, dan waktu refresh berikutnya (WIB).
 - Refresh dari terminal juga tersedia. Satu proses impor saja boleh berjalan, termasuk antara dashboard dan CLI.
 - **34 tab mitra**: 27 FO + 7 RADIO. Daftar sudah diisi di `config/mitra.json`.
-- `DATA TIF FO`: **51 kolom**; `DATA TIF RADIO`: **57 kolom**; `DataDisatukan`: **17 kolom** yang sepadan di kedua format. Semua dipetakan lewat judul, bukan posisi kolom.
+- `DATA TIF FO`: **51 kolom**; `DATA TIF RADIO`: **57 kolom**; `DataDisatukan`: **19 kolom** yang sepadan di kedua format. Semua dipetakan lewat judul, bukan posisi kolom.
 - Data baru/bekas terhapus mengikuti sumber. Kolom yang tidak tersedia dikosongkan. Kolom tambahan sumber hanya disimpan di tab mitranya.
 - Kolom MITRA di tab mentah menggunakan ARRAYFORMULA berbasis SITE ID untuk FO dan HOP untuk RADIO. Sheet gabungan berisi hasil pemetaan, bukan IMPORTRANGE.
 - Setelah staging disalin, area spill MITRA benar-benar dikosongkan sebelum formula dipasang; seluruh hasil nama mitra diperiksa kembali sebelum job dinyatakan sukses. Ini mencegah `#REF!` akibat sel kosong semu dari hasil paste.
@@ -185,7 +185,7 @@ Jangan jalankan `pip` dengan `sudo`. Jika service berhenti saat staging, hasil l
 - Header sumber dicari di 10 baris pertama. Baris tanpa SITE ID / NE ID dilewati. Kolom REGION/REG tidak ditebak menjadi REGIONAL TIF.
 - Data dibaca sebagai nilai terakhir Google Sheets. Formula pada sumber (termasuk lookup STATUS INFRA) harus sudah benar dan punya izin IMPORTRANGE bila digunakan. VPS tidak membuat lookup/status baru dan tidak memperbaiki `#REF!` atau `#N/A` sumber.
 - Sumber berjumlah 34 dan dibaca berurutan; API diperlambat menjadi 45 read/write requests per menit, disertai exponential backoff untuk quota/transient errors. Pindah VPS menghilangkan batas durasi eksekusi Apps Script; [kuota Sheets API tetap berlaku](https://developers.google.com/workspace/sheets/api/limits).
-- Staging membutuhkan ruang sementara di file tujuan. Import ditolak sebelum staging jika diperkirakan melampaui batas 10 juta sel.
+- Staging membutuhkan ruang sementara di file tujuan. Import ditolak sebelum staging jika diperkirakan melampaui batas 20 juta sel.
 - Jadwal menggunakan interval sejak service dimulai, bukan jaminan selesai tepat di menit `:00`. Jadwal yang terlewat ketika impor masih berjalan dilewati, tidak ditumpuk. Tombol manual tidak mengubah jadwal hourly.
 - Status terakhir ada di `runtime/status.json`, log service: `journalctl -u import-mitra -f`. Jika server mati, jadwal berhenti hingga service hidup kembali.
 - Akses OAuth dapat dicabut/berakhir. Jika muncul `invalid_grant`, login ulang di laptop lalu kirim token baru; restart service.

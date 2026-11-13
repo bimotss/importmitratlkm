@@ -21,7 +21,7 @@ def test_real_source_manifest_and_fixed_formats(config):
     assert sum(s["group"] == "FO" for s in config["sources"]) == 27
     assert {s["title"] for s in config["sources"] if s["group"] == "RADIO"} == {
         "pst_radio", "multireka", "huawei", "cmm_zte", "eid", "aviat", "Telkom infra"}
-    assert [len(config["schemas"][k]) for k in ("fo", "radio", "all")] == [51, 57, 17]
+    assert [len(config["schemas"][k]) for k in ("fo", "radio", "all")] == [51, 57, 19]
     assert "data_HARRIF" not in {s["title"] for s in config["sources"]}
 
 
@@ -62,6 +62,19 @@ def test_multirow_headers_blanks_added_rows_and_zero_values(config):
     assert partner_formula(data) == '=ARRAYFORMULA(IF(B2:B<>"","TA",""))'
 
 
+def test_combined_hop_is_beside_site_and_preserves_distinct_radio_links(config):
+    aliases = config["aliases"]
+    fo = parse_source([["SITE ID", "SP"], ["F1", "SP1"]],
+                      {"title": "bto", "group": "FO", "start": 2}, aliases)
+    radio = parse_source([["NE ID", "HOP", "WO/SP"],
+                          ["R1", "R1-FE1", "SP2"], ["R1", "R1-FE2", "SP2"]],
+                         {"title": "pst_radio", "group": "RADIO", "start": 2}, aliases)
+    tables, _ = build_tables([fo, radio], config)
+    combined = next(t for t in tables if t.title == "DataDisatukan")
+    assert combined.headers[3:6] == ["SITE ID", "HOP", "SITE NAME"]
+    assert [row[3:5] for row in combined.rows] == [["F1", ""], ["R1", "R1-FE1"], ["R1", "R1-FE2"]]
+
+
 def test_invalid_header_and_missing_hop_fail_before_publish(config):
     s = {"title": "radio", "group": "RADIO", "start": 2}
     with pytest.raises(ValueError, match="SITE ID"):
@@ -87,6 +100,25 @@ def test_aliases_do_not_guess_regional(config):
     data = parse_source([["SITE ID", "REG", "REGIONAL TIF"], ["A1", "AREA 1", "SUMBAGUT"]],
                         s, config["aliases"])
     assert project(data, ["REGIONAL TIF"], config["aliases"]) == [["SUMBAGUT"]]
+
+
+@pytest.mark.parametrize("group,header,status,expected", [
+    ("FO", "Grouping Progress", "02.OGP SURVEY", "02.OGP SURVEY / MATERIAL PREPARATION"),
+    ("FO", "STATUS VERIFIKASI COD", "08.RFS", "08.RFS"),
+    ("RADIO", "Progress Flag", "06.RFS", "08.RFS"),
+    ("RADIO", "Flagging Progress", "03.PERIZINAN", "04.PERIZINAN"),
+    ("RADIO", "Flagging Progress", "", ""),
+    ("FO", "STATUS VERIFIKASI COD", "STATUS BARU", "STATUS BARU"),
+])
+def test_combined_flagging_from_group_specific_status(config, group, header, status, expected):
+    source = {"title": "test", "group": group, "start": 2}
+    data = parse_source([["SITE ID", "HOP", header, "KETERANGAN UPDATE"],
+                         ["A1", "A1-B1", status, "Catatan"]], source, config["aliases"])
+    headers = config["schemas"]["all"]
+    result = project(data, headers, config["aliases"])[0]
+    index = headers.index("FLAGGING FO/RADIO")
+    assert headers[index + 1] == "KETERANGAN UPDATE"
+    assert result[index:index + 2] == [expected, "Catatan"]
 
 
 def test_reject_target_as_source_and_duplicate_titles(config, tmp_path):

@@ -8,6 +8,9 @@ import requests
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2 import credentials, service_account
 
+# Google Sheets doubled the workbook limit in September 2026.
+SHEET_CELL_LIMIT = 20_000_000
+
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 LOG = logging.getLogger(__name__)
 
@@ -67,7 +70,7 @@ class GoogleSheets:
 
     def metadata(self, spreadsheet_id):
         return self.request("GET", spreadsheet_id, params={
-            "fields": "spreadsheetId,sheets.properties(sheetId,title,gridProperties)"
+            "fields": "spreadsheetId,sheets(properties(sheetId,title,gridProperties),basicFilter)"
         })
 
     def read(self, spreadsheet_id, a1):
