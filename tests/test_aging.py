@@ -267,3 +267,34 @@ def test_date_objects_are_supported():
 
     assert parse_date_value(date(2026, 11, 13)) == date(2026, 11, 13)
     assert parse_date_value(datetime(2026, 11, 13, 12, 30)) == date(2026, 11, 13)
+
+
+def test_duplicate_radio_statuses_keep_independent_history_across_rekap_cod_and_days(tmp_path):
+    from import_mitra.importer import build_tables
+
+    config = load_config(ROOT / "config/mitra.json")
+    profile = json.loads((ROOT / "config/cod2026.json").read_text())
+    data = parse_source([
+        ["NE ID", "HOP", "WO/SP", "Inhand Date", "Flagging Progress", "Tanggal Ganti Flagging"],
+        ["R1", "H-1", "SP-2026", "01/10/2026", "06.RFS", "28/09/2026"],
+        ["R1", "H-1", "SP-2026", "01/10/2026", "00.DROP", "01/11/2026"],
+    ], {"title": "data_RADIO", "group": "RADIO", "start": 2}, config["aliases"])
+    state_file = tmp_path / "aging.json"
+    tracker = AgingTracker(state_file, today=date(2026, 11, 13))
+    # A legacy entry collapsed both occurrences and must not seed either one.
+    tracker.track_record("radio", ("H-1", "SP-2026", "RADIO"), "00.DROP")
+    spec = profile["groups"]["radio"]
+    pos = spec["managed_columns"].index(52)
+    for day, expected in ((13, [46, 12]), (14, [47, 13])):
+        tracker.today = date(2026, 11, day)
+        tables, _ = build_tables([data], config, aging_tracker=tracker)
+        table = next(t for t in tables if t.title == "DATA TIF RADIO")
+        index = table.headers.index("Aging Progress")
+        assert [row[index] for row in table.rows] == expected
+        cod, _ = project_records([data], spec, config["aliases"], "RADIO", tracker)
+        assert [r["values"][pos] for r in cod] == expected
+        tracker.save()
+        tracker = AgingTracker(state_file, today=date(2026, 11, day))
+    data.rows[0][4] = "07.CT"
+    cod, _ = project_records([data], spec, config["aliases"], "RADIO", tracker)
+    assert [r["values"][pos] for r in cod] == [0, 13]

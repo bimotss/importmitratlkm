@@ -1,5 +1,6 @@
 """Pemetaan mengikuti judul: urutan dan kolom tambahan sumber tidak menggeser hasil."""
 import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 
 
@@ -78,22 +79,40 @@ def parse_source(values, source, aliases):
     return SourceData(source, headers, keys, rows, key_index)
 
 
+def aging_record_keys(data, positions):
+    """Separate repeated identities in source order, matching COD's duplicate queues."""
+    identifier = "HOP" if data.config["group"] == "RADIO" else "SITEID"
+    def value(row, field):
+        index = positions.get(field)
+        return row[index] if index is not None else ""
+
+    keys = [(norm(value(row, identifier)), norm(value(row, "SP")), norm(data.name))
+            for row in data.rows]
+    counts, seen = Counter(keys), defaultdict(int)
+    result = []
+    for key in keys:
+        seen[key] += 1
+        # Never reuse a collapsed legacy history for a repeated identity: it may
+        # belong to another occurrence with a different progress status.
+        result.append(key + (f"DUPLICATE{seen[key]}",) if counts[key] > 1 else key)
+    return result
+
+
 def project(data, headers, aliases, aging_tracker=None):
     from .aging import is_order_2026
 
     positions = {norm(k): i for i, k in enumerate(data.keys)}
     group = data.config["group"].upper()
     result = []
-    for row in data.rows:
+    aging_keys = aging_record_keys(data, positions) if aging_tracker is not None else [None] * len(data.rows)
+    for row, key in zip(data.rows, aging_keys):
         aging_days = None
         change_serial = None
         grouping = ""
 
         if aging_tracker is not None:
             if group == "RADIO":
-                hop = row[positions["HOP"]] if "HOP" in positions else ""
                 sp = row[positions["SP"]] if "SP" in positions else (row[positions["WOSP"]] if "WOSP" in positions else "")
-                key = (hop, sp, data.name)
                 flagging = row[positions["FLAGGINGPROGRESS"]] if "FLAGGINGPROGRESS" in positions else ""
                 inhand_raw = row[positions["TGLORDERDITERIMA"]] if "TGLORDERDITERIMA" in positions else (
                     row[positions["INHANDDATE"]] if "INHANDDATE" in positions else ""
@@ -104,9 +123,7 @@ def project(data, headers, aliases, aging_tracker=None):
                     "radio", key, flagging, is_2026=is_2026, existing_change_date=existing_change, order_date=inhand_raw
                 )
             else:
-                site = row[positions["SITEID"]] if "SITEID" in positions else ""
                 sp = row[positions["SP"]] if "SP" in positions else (row[positions["WOSP"]] if "WOSP" in positions else "")
-                key = (site, sp, data.name)
                 flagging = row[positions["STATUSVERIFIKASICOD"]] if "STATUSVERIFIKASICOD" in positions else ""
                 tahun_raw = row[positions["TAHUNPROJECT"]] if "TAHUNPROJECT" in positions else ""
                 tgl_raw = row[positions["TGLORDERDITERIMA"]] if "TGLORDERDITERIMA" in positions else ""
