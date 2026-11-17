@@ -542,3 +542,22 @@ def test_schema_migration_preserves_existing_data(tmp_path):
     store.update_progress("new_run_2", phase="normalize", message="Normalisasi data")
     new_r = store.get_run("new_run_2")
     assert new_r["last_phase"] == "normalize"
+
+
+def test_wal_sidecars_persist_for_read_only_dashboard(tmp_path):
+    """A reader without directory write access needs readable WAL sidecars."""
+    import sqlite3
+
+    db = tmp_path / "public" / "history.db"
+    store = HistoryStore(db)
+    store.start_run("reader-test")
+    for suffix in ("-wal", "-shm"):
+        sidecar = db.with_name(db.name + suffix)
+        assert sidecar.exists()
+        assert sidecar.stat().st_mode & 0o444 == 0o444
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as reader:
+        assert reader.execute("SELECT run_id FROM import_runs").fetchone()[0] == "reader-test"
+    store.finish_run("reader-test", "success", result={"total": 1})
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as reader:
+        assert reader.execute("SELECT status FROM import_runs").fetchone()[0] == "success"
+    store.close()

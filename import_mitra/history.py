@@ -138,7 +138,26 @@ class HistoryStore:
         self.lock_checker = lock_checker
         self.health = "healthy"
         self.last_error: str | None = None
+        self._wal_keeper: sqlite3.Connection | None = None
         self.init_db()
+        if self.health == "healthy":
+            try:
+                # Keep WAL/SHM present so a different read-only OS user never
+                # needs write permission on the report directory to recreate them.
+                self._wal_keeper = sqlite3.connect(str(self.db_path), check_same_thread=False)
+                self._wal_keeper.execute("SELECT count(*) FROM import_runs").fetchone()
+                self._ensure_file_permissions()
+            except (OSError, sqlite3.Error) as exc:
+                self.health = "error"
+                self.last_error = str(exc)
+                LOG.error("Gagal mempertahankan akses reader WAL history: %s", exc)
+
+    def close(self) -> None:
+        """Release the persistent WAL reader connection on shutdown."""
+        if self._wal_keeper is not None:
+            self._wal_keeper.close()
+            self._wal_keeper = None
+
 
     @contextmanager
     def _conn(self) -> Generator[sqlite3.Connection, None, None]:
