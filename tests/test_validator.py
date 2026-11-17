@@ -734,3 +734,31 @@ def test_exclusive_validation_locking(tmp_path):
             pass
         assert "sedang berjalan" in str(exc_info.value)
 
+
+
+def test_large_schema_is_batched_without_losing_original_row(tmp_path):
+    source = {"title": "data_BATCH", "group": "FO", "id": "fake", "sheet": "Data", "start": 2}
+    raw = [["SITE ID", "STATUS"]] + [[f"S{i}", "OK"] for i in range(500)]
+    raw[500][1] = "WRONG"
+
+    class BatchAPI:
+        def __init__(self):
+            self.ranges = []
+
+        def read(self, *_):
+            return raw
+
+        def request(self, _method, _doc, *, params):
+            self.ranges.extend(params["ranges"])
+            rule = {"dataValidation": {"condition": {"type": "ONE_OF_LIST", "values": [{"userEnteredValue": "OK"}]}}}
+            if len(params["ranges"]) == 2:
+                header = {"rowData": [{"values": [{"formattedValue": "SITE ID"}, {"formattedValue": "STATUS"}]}]}
+                rows = [{"values": []}, {"values": [{}, rule]}]
+                return {"sheets": [{"properties": {"sheetId": 1}, "data": [header, {"rowData": rows}]}]}
+            return {"sheets": [{"data": [{"startRow": 500, "rowData": [{"values": [{}, rule]}]}]}]}
+
+    api = BatchAPI()
+    result = MitraValidator(api, {"sources": [source]}, tmp_path / "report.json").run()
+    assert [f["cell_address"] for f in result["findings"]] == ["B501"]
+    assert "'Data'!A501:B501" in api.ranges
+    assert all("!" in r for r in api.ranges)

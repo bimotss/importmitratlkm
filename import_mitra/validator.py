@@ -170,14 +170,21 @@ class MitraValidator:
         group = str(source.get("group", "FO")).strip().upper()
         unverified_scopes: list[dict] = []
 
-        # Request header (10 baris pertama untuk identifikasi posisi header) dan seluruh sheet untuk dataValidation
+        # Bound metadata to occupied cells, and split large sheets so repeated
+        # dropdown definitions do not create an oversized API response.
+        if raw_values is None:
+            raw_values = self.api.read(doc_id, quoted(sheet_title))
+        height = max(10, len(raw_values))
+        width = max(1, max((len(row) for row in raw_values), default=1))
+        sheet_range = quoted(sheet_title)
+        first_end = min(height, 500)
         res = self.api.request(
             "GET",
             doc_id,
             params={
                 "ranges": [
-                    f"'{sheet_title}'!1:10",
-                    f"'{sheet_title}'",
+                    f"{sheet_range}!A1:{col(width)}10",
+                    f"{sheet_range}!A1:{col(width)}{first_end}",
                 ],
                 "includeGridData": "true",
                 "fields": "sheets(properties(sheetId,title),data(rowData(values(formattedValue,effectiveFormat(backgroundColor),dataValidation))))",
@@ -198,6 +205,25 @@ class MitraValidator:
             if len(data_blocks) > 1
             else first_10_rows
         )
+
+        for first in range(501, height + 1, 500):
+            last = min(first + 499, height)
+            chunk = self.api.request(
+                "GET", doc_id, params={
+                    "ranges": [f"{sheet_range}!A{first}:{col(width)}{last}"],
+                    "includeGridData": "true",
+                    "fields": "sheets(data(startRow,rowData(values(dataValidation))))",
+                },
+            )
+            blocks = chunk.get("sheets", [{}])[0].get("data", [])
+            if not blocks:
+                continue
+            block = blocks[0]
+            offset = block.get("startRow", first - 1)
+            rows = block.get("rowData", [])
+            if len(all_sheet_rows) < offset:
+                all_sheet_rows.extend({} for _ in range(offset - len(all_sheet_rows)))
+            all_sheet_rows.extend(rows)
 
         # 1. Deteksi Baris Header pada 10 baris pertama yang konsisten dengan importer
         aliases = {**self.config.get("aliases", {}), **source.get("header_aliases", {})}
@@ -327,6 +353,8 @@ class MitraValidator:
         self, source: dict, raw_values: list[list[Any]] | None = None
     ) -> tuple[list[Finding], list[dict], int]:
         """Validasi data pada satu sumber spreadsheet mitra menggunakan snapshot mentah."""
+        if raw_values is None:
+            raw_values = self.api.read(source["id"], quoted(source["sheet"]))
         (
             sheet_id,
             header_row_idx,
@@ -338,9 +366,6 @@ class MitraValidator:
             cell_rules,
             unverified,
         ) = self.inspect_source_schema(source, raw_values=raw_values)
-
-        if raw_values is None:
-            raw_values = self.api.read(source["id"], quoted(source["sheet"]))
 
         # Jika kolom identitas atau header tidak dapat ditentukan, jangan tebak kolom 0
         if key_index < 0 or header_row_idx < 0:
