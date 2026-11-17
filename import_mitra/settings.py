@@ -22,14 +22,21 @@ class Settings:
     cod_profile: Path = Path("config/cod2026.json")
     sync_cod: bool = False
     cod_backup_keep: int = 24
+    validation_report_path: Path = Path("runtime/validation-report.json")
+    history_db_path: Path = Path("runtime/history.db")
+    history_retention_days: int = 90
 
     @classmethod
     def load(cls):
         load_dotenv()
+        state_dir = Path(os.getenv("MITRA_STATE_DIR", "runtime")).resolve()
+        hist_env = os.getenv("MITRA_HISTORY_DB_PATH")
+        history_db_path = Path(hist_env).resolve() if hist_env else (state_dir / "history.db")
+
         s = cls(
             config_path=Path(os.getenv("MITRA_CONFIG", "config/mitra.json")).resolve(),
             credentials_file=Path(os.getenv("GOOGLE_CREDENTIALS_FILE", "secrets/google-token.json")).resolve(),
-            state_dir=Path(os.getenv("MITRA_STATE_DIR", "runtime")).resolve(),
+            state_dir=state_dir,
             interval_seconds=int(os.getenv("MITRA_INTERVAL_SECONDS", "3600")),
             refresh_on_start=os.getenv("MITRA_REFRESH_ON_START", "true").lower() == "true",
             host=os.getenv("MITRA_HOST", "127.0.0.1"),
@@ -41,6 +48,11 @@ class Settings:
             cod_profile=Path(os.getenv("MITRA_COD_PROFILE", "config/cod2026.json")).resolve(),
             sync_cod=os.getenv("MITRA_SYNC_COD", "false").lower() == "true",
             cod_backup_keep=int(os.getenv("MITRA_COD_BACKUP_KEEP", "24")),
+            validation_report_path=Path(
+                os.getenv("MITRA_VALIDATION_REPORT_PATH", "runtime/validation-report.json")
+            ).resolve(),
+            history_db_path=history_db_path,
+            history_retention_days=int(os.getenv("MITRA_HISTORY_RETENTION_DAYS", "90")),
         )
         if s.interval_seconds < 60:
             raise ValueError("MITRA_INTERVAL_SECONDS minimal 60 detik.")

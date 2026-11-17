@@ -13,6 +13,7 @@ from import_mitra.web import create_app
 def settings(tmp_path):
     return Settings(config_path=Path(__file__).parents[1] / "config/mitra.json",
                     credentials_file=tmp_path / "no-token.json", state_dir=tmp_path,
+                    validation_report_path=tmp_path / "validation-report.json",
                     refresh_on_start=False, admin_password="test-password-at-least-16")
 
 
@@ -97,3 +98,30 @@ def test_web_requires_auth_csrf_header_and_returns_409_when_busy(tmp_path):
         assert client.post("/api/refresh", headers={"X-Mitra-Action": "refresh"}).status_code == 202
         assert client.post("/api/refresh", headers={"X-Mitra-Action": "refresh"}).status_code == 409
 
+
+def test_api_validation_endpoint(tmp_path):
+    s = settings(tmp_path)
+    worker = SimpleNamespace(start=lambda: None, close=lambda: None,
+                             status=lambda: {"running": False, "status": "idle"})
+    with TestClient(create_app(s, worker)) as client:
+        # 1. Unauthorized -> 401
+        assert client.get("/api/validation").status_code == 401
+
+        client.auth = (s.admin_user, s.admin_password)
+        # 2. File does not exist -> 200 unverified
+        res_not_found = client.get("/api/validation")
+        assert res_not_found.status_code == 200
+        assert res_not_found.json()["status"] == "unverified"
+
+        # 3. File exists with valid report -> 200 JSON
+        report_file = s.validation_report_path
+        report_file.parent.mkdir(parents=True, exist_ok=True)
+        report_file.write_text('{"status": "success", "summary": {"total_findings": 0}}')
+        res_ok = client.get("/api/validation")
+        assert res_ok.status_code == 200
+        assert res_ok.json()["status"] == "success"
+
+        # 4. Corrupted file -> 500
+        report_file.write_text("CORRUPTED_JSON{{{")
+        res_corrupt = client.get("/api/validation")
+        assert res_corrupt.status_code == 500

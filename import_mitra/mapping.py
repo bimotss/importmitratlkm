@@ -34,6 +34,8 @@ class SourceData:
     keys: list
     rows: list
     key_index: int
+    raw_values: list | None = None
+    header_row: int = 0
 
     @property
     def name(self):
@@ -76,7 +78,7 @@ def parse_source(values, source, aliases):
         if value is None or str(value).strip() == "" or norm(value) in {"SITEID", "NEID"}:
             continue
         rows.append(list(row) + [""] * (width - len(row)))
-    return SourceData(source, headers, keys, rows, key_index)
+    return SourceData(source, headers, keys, rows, key_index, raw_values=values, header_row=header_row)
 
 
 def aging_record_keys(data, positions):

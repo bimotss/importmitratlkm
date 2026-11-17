@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from .jobs import BusyError, JobRunner
+from .jobs import BusyError, JobRunner, exclusive_validation
 from .settings import Settings
 
 LOG = logging.getLogger(__name__)
@@ -21,6 +21,8 @@ def main():
     cod = sub.add_parser("sync-cod", help="Perbarui COD 2026 tanpa mengganti header/kolom/rumus bantu")
     cod.add_argument("--dry-run", action="store_true", help="Periksa pemetaan COD tanpa menulis")
     sub.add_parser("check", help="Periksa akses tujuan + semua sumber tanpa menulis")
+    val_cmd = sub.add_parser("validate", help="Validasi kualitas data mitra (dropdown & kolom wajib) tanpa menulis ke Google Sheets")
+    val_cmd.add_argument("--report", type=Path, default=None, help="Lokasi output file laporan JSON")
     auth = sub.add_parser("auth", help="Login Google sekali dari laptop; token dapat dipindahkan ke VPS")
     auth.add_argument("--client", required=True, type=Path, help="JSON OAuth client jenis Desktop app")
     auth.add_argument("--port", type=int, default=8765)
@@ -50,6 +52,34 @@ def main():
             from .web import create_app
             uvicorn.run(create_app(settings), host=settings.host, port=settings.port, workers=1,
                         proxy_headers=True, forwarded_allow_ips="127.0.0.1", access_log=False)
+        elif args.command == "validate":
+            from .google_api import GoogleSheets
+            from .settings import load_config
+            from .validator import MitraValidator
+
+            config = load_config(settings.config_path)
+            api = GoogleSheets(settings.credentials_file, requests_per_minute=settings.requests_per_minute)
+            report_path = args.report or settings.validation_report_path
+            validator = MitraValidator(api, config, report_path=report_path)
+
+            try:
+                with exclusive_validation(settings.state_dir):
+                    report = validator.run()
+            except BusyError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                return 2
+
+            print(json.dumps({
+                "status": report["status"],
+                "total_findings": report["summary"]["total_findings"],
+                "total_priority_findings": report["summary"].get("total_priority_findings", 0),
+                "total_problematic_mitra": report["summary"]["total_problematic_mitra"],
+                "findings_by_type": report["summary"]["findings_by_type"],
+                "unverified_scopes": len(report.get("unverified_scopes", [])),
+                "report_file": str(validator.report_path)
+            }, indent=2))
+            if report["status"] != "success":
+                return 1
         else:
             from .web import make_importer
             if args.command == "check":
@@ -62,9 +92,10 @@ def main():
                 if args.command == "sync-cod":
                     from .cod import make_cod_importer
                     runner = JobRunner(settings, lambda: make_cod_importer(settings))
+                    result = runner.run(dry_run=args.dry_run, trigger="cli", job_type="sync_cod")
                 else:
                     runner = JobRunner(settings, lambda: make_importer(settings))
-                result = runner.run(dry_run=args.dry_run)
+                    result = runner.run(dry_run=args.dry_run, trigger="cli", job_type="dry_run" if args.dry_run else "normal")
             print(json.dumps(result, indent=2))
     except BusyError as exc:
         print(str(exc), file=sys.stderr)

@@ -1,3 +1,4 @@
+import json
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -60,6 +61,37 @@ def create_app(settings=None, worker=None):
     @app.get("/api/status", dependencies=[Depends(authorize)])
     def status():
         return worker.status()
+
+    @app.get("/api/validation", dependencies=[Depends(authorize)])
+    def validation_report():
+        report_file = settings.validation_report_path
+        if not report_file.exists():
+            return {"status": "unverified", "message": "Belum ada laporan validasi mitra."}
+        try:
+            return json.loads(report_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            raise HTTPException(500, f"Gagal membaca laporan validasi: {exc}") from exc
+
+    @app.get("/api/history", dependencies=[Depends(authorize)])
+    def import_history(
+        page: int = 1,
+        per_page: int = 50,
+        status: str = "",
+        job_type: str = "",
+        date_from: str = "",
+        date_to: str = "",
+    ):
+        if not hasattr(worker.runner, "history") or not worker.runner.history:
+            return {"runs": [], "total": 0, "page": page, "per_page": per_page}
+        runs, total = worker.runner.history.list_runs(
+            page=page,
+            per_page=per_page,
+            status=status or None,
+            job_type=job_type or None,
+            date_from=date_from or None,
+            date_to=date_to or None,
+        )
+        return {"runs": runs, "total": total, "page": page, "per_page": per_page}
 
     @app.post("/api/refresh", status_code=202, dependencies=[Depends(authorize)])
     def refresh(x_mitra_action: str = Header(default="")):

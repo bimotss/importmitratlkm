@@ -5,6 +5,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .google_api import SHEET_CELL_LIMIT
@@ -138,7 +139,7 @@ def formatting(sheet_id, table):
 
 
 class Importer:
-    def __init__(self, api, config, *, interval_seconds=3600, public_url="", state_dir=None, aging_tracker=None):
+    def __init__(self, api, config, *, interval_seconds=3600, public_url="", state_dir=None, aging_tracker=None, validator=None):
         from pathlib import Path
         self.api, self.config = api, config
         self.target = config["target_spreadsheet_id"]
@@ -152,6 +153,15 @@ class Importer:
         else:
             self.aging_tracker = None
         self.cod_sync = None
+        if validator is not None:
+            self.validator = validator
+        else:
+            import os
+
+            from .validator import MitraValidator
+            report_env = os.getenv("MITRA_VALIDATION_REPORT_PATH")
+            report_path = Path(report_env).resolve() if report_env else ((self.state_dir / "validation-report.json") if self.state_dir else None)
+            self.validator = MitraValidator(self.api, self.config, report_path=report_path)
 
     def collect(self, progress):
         datasets = []
@@ -175,8 +185,25 @@ class Importer:
                                       aging_tracker=self.aging_tracker)
         if self.cod_sync and self.aging_tracker and not getattr(self.cod_sync, "aging_tracker", None):
             self.cod_sync.aging_tracker = self.aging_tracker
+
+        val_summary = None
+        if self.validator:
+            try:
+                from .jobs import BusyError, exclusive_validation
+                val_lock_dir = self.state_dir or Path("runtime").resolve()
+                try:
+                    with exclusive_validation(val_lock_dir):
+                        val_report = self.validator.run(progress, cached_datasets=datasets)
+                        val_summary = val_report.get("summary")
+                except BusyError:
+                    LOG.warning("Validasi mitra dilewati pada refresh ini karena proses validasi lain sedang berjalan.")
+            except Exception as val_exc:  # noqa: BLE001
+                LOG.warning("Validasi mitra gagal (impor tetap dilanjutkan): %s", val_exc)
+
         if dry_run:
             result = {**counts, "dry_run": True, "sources": len(datasets), "tabs": len(tables)}
+            if val_summary:
+                result["validation"] = val_summary
             if self.cod_sync:
                 result["cod"] = self.cod_sync.refresh_from_rekap(progress, dry_run=True)
             return result
@@ -184,6 +211,8 @@ class Importer:
         if self.aging_tracker:
             self.aging_tracker.save()
         result = {**counts, "sources": len(datasets), "tabs": len(tables)}
+        if val_summary:
+            result["validation"] = val_summary
         if self.cod_sync:
             result["cod"] = self.cod_sync.refresh_from_rekap(progress)
         return result
