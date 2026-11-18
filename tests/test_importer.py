@@ -107,7 +107,7 @@ class MemoryAPI:
 @pytest.fixture
 def setup():
     c = load_config(Path(__file__).parents[1] / "config/mitra.json")
-    c["sources"] = [dict(s, start=2) for s in [c["sources"][0], c["sources"][27]]]
+    c["sources"] = [dict(s, start=2) for s in [c["sources"][0], next(s for s in c["sources"] if s["group"] == "RADIO")]]
     api = MemoryAPI(c)
     return c, api, Importer(api, c)
 
@@ -121,8 +121,8 @@ def test_staged_commit_preserves_tab_ids_and_unrelated_content(setup):
     result = importer.run()
     assert result["total"] == 2
     assert by_title(api, "DATA TIF FO")["properties"]["sheetId"] == 10
-    assert by_title(api, "DATA TIF FO")["properties"]["gridProperties"]["columnCount"] == 51
-    assert by_title(api, "DATA TIF RADIO")["properties"]["gridProperties"]["columnCount"] == 57
+    assert by_title(api, "DATA TIF FO")["properties"]["gridProperties"]["columnCount"] == 58
+    assert by_title(api, "DATA TIF RADIO")["properties"]["gridProperties"]["columnCount"] == 70
     assert by_title(api, "DataDisatukan")["properties"]["gridProperties"]["columnCount"] == 19
     assert by_title(api, "Unrelated")["values"] == [["KEEP"]]
     assert not any(s["properties"]["title"].startswith("_IM_STAGING_") for s in api.sheets.values())
@@ -231,3 +231,33 @@ def test_aging_state_only_saved_after_successful_publish(setup, tmp_path):
     assert state.stat().st_mode & 0o777 == 0o600
     fo = by_title(api, "DATA TIF FO")["values"]
     assert fo[1][fo[0].index("Aging Progress")] == 12
+
+
+def test_radio_milestone_and_hold_formats():
+    from import_mitra.importer import Table, formatting
+    requests = formatting(1, Table('RADIO', ['Tanggal HOLD', 'Durasi Hold (Days)', 'Tanggal Finish BAST'], [[46340, 5, 46341]]))
+    formats = {r['repeatCell']['range']['startColumnIndex']: r['repeatCell']['cell']['userEnteredFormat']['numberFormat']
+               for r in requests if r.get('repeatCell', {}).get('fields') == 'userEnteredFormat.numberFormat'}
+    assert formats == {0: {'type': 'DATE', 'pattern': 'dd/MM/yyyy'},
+                       1: {'type': 'NUMBER', 'pattern': '0'},
+                       2: {'type': 'DATE', 'pattern': 'dd/MM/yyyy'}}
+
+
+def test_current_radio_fields_survive_publication_and_repeat_refresh():
+    config = load_config(Path(__file__).parents[1] / 'config/mitra.json')
+    config['sources'] = [s for s in config['sources'] if s['group'] == 'RADIO']
+    api = MemoryAPI(config)
+    headers = config['partner_radio_headers']
+    for source in config['sources']:
+        row = [f'{source["title"]}-{i}' for i in range(len(headers))]
+        row[headers.index('Durasi Hold (Days)')] = 5
+        api.sources[source['id']] = [headers, row]
+    importer = Importer(api, config)
+    importer.run()
+    sheet_id = by_title(api, 'DATA TIF RADIO')['properties']['sheetId']
+    expected = [[re.sub(r'^data_', '', s['title'], flags=re.IGNORECASE).upper()] + api.sources[s['id']][1]
+                for s in config['sources']]
+    assert by_title(api, 'DATA TIF RADIO')['values'] == [config['schemas']['radio']] + expected
+    importer.run()
+    assert by_title(api, 'DATA TIF RADIO')['properties']['sheetId'] == sheet_id
+    assert by_title(api, 'DATA TIF RADIO')['values'] == [config['schemas']['radio']] + expected

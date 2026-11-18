@@ -17,11 +17,11 @@ def config():
 
 
 def test_real_source_manifest_and_fixed_formats(config):
-    assert len(config["sources"]) == 34
-    assert sum(s["group"] == "FO" for s in config["sources"]) == 27
+    assert len(config["sources"]) == 35
+    assert sum(s["group"] == "FO" for s in config["sources"]) == 28
     assert {s["title"] for s in config["sources"] if s["group"] == "RADIO"} == {
         "pst_radio", "multireka", "huawei", "cmm_zte", "eid", "aviat", "Telkom infra"}
-    assert [len(config["schemas"][k]) for k in ("fo", "radio", "all")] == [51, 57, 19]
+    assert [len(config["schemas"][k]) for k in ("fo", "radio", "all")] == [58, 70, 19]
     assert "data_HARRIF" not in {s["title"] for s in config["sources"]}
 
 
@@ -50,7 +50,7 @@ def test_radio_aliases_hop_formula_and_shared_projection(config):
     assert result == [["NE01", "Site Test", "NEW INFRA", 46000, "PST_RADIO", "RADIO"]]
     tables, counts = build_tables([d], config)
     assert counts == {"fo": 0, "radio": 1, "total": 1}
-    assert len(next(t for t in tables if t.title == "DATA TIF RADIO").rows[0]) == 57
+    assert len(next(t for t in tables if t.title == "DATA TIF RADIO").rows[0]) == 70
 
 
 def test_multirow_headers_blanks_added_rows_and_zero_values(config):
@@ -130,3 +130,47 @@ def test_reject_target_as_source_and_duplicate_titles(config, tmp_path):
     with pytest.raises(ValueError, match="tujuan"):
         load_config(path)
 
+
+
+def test_new_partner_schema_preserves_every_field_and_inhand_alias(config):
+    source = next(s for s in config['sources'] if s['title'] == 'data_NJE')
+    assert source['sheet'] == 'data_NATA_JAYA_ELEKTRO'
+    headers = config['partner_fo_headers']
+    assert len(headers) == 57
+    values = [f'value-{i}' for i in range(len(headers))]
+    values[headers.index('SITE ID')] = 'NJE-001'
+    # Reordering source columns must not change the 58-column FO output.
+    data = parse_source([list(reversed(headers)), list(reversed(values))], source, config['aliases'])
+    assert project(data, config['schemas']['fo'], config['aliases']) == [['NJE'] + values]
+    assert project(data, ['TGL ORDER DITERIMA'], config['aliases']) == [
+        [values[headers.index('Tanggal Inhand')]]]
+
+
+@pytest.mark.parametrize('title', ['pst_radio', 'multireka', 'huawei', 'cmm_zte', 'eid', 'aviat', 'Telkom infra'])
+def test_current_radio_schema_preserves_all_fields_with_reordered_columns(config, title):
+    source = next(s for s in config['sources'] if s['title'] == title)
+    headers = config['partner_radio_headers']
+    values = [f'field-{i}' for i in range(len(headers))]
+    data = parse_source([headers[::-1], values[::-1]], source, config['aliases'])
+    assert len(set(data.keys)) == 69
+    assert project(data, config['schemas']['radio'], config['aliases']) == [[data.name] + values]
+    assert project(data, ['Inhand Date', 'Tanggal Inhand'], config['aliases']) == [
+        [values[2], values[41]]]
+
+
+def test_legacy_radio_bast_and_current_inhand_fallback(config):
+    source = next(s for s in config['sources'] if s['group'] == 'RADIO')
+    data = parse_source([['NE ID', 'HOP', 'BAST Date', 'RFS Date', 'Inhand Date', 'Tanggal Inhand'],
+                         ['NE1', 'H1', 46340, 46330, '', 46300]], source, config['aliases'])
+    assert project(data, ['Tanggal Finish BAST', 'RFS Date', 'Inhand Date', 'Tanggal Inhand'],
+                   config['aliases']) == [[46340, 46330, 46300, 46300]]
+    from import_mitra.cod import project_records
+    spec = {'headers': ['HOP', 'Inhand Date', 'BAST Date'], 'managed_columns': [1, 2, 3]}
+    records, missing = project_records([data], spec, config['aliases'], 'RADIO')
+    assert not missing
+    assert records[0]['values'] == ['H1', 46300, 46340]
+    current = parse_source([['NE ID', 'HOP', 'Tanggal Finish BAST', 'Tanggal Inhand'],
+                            ['NE1', 'H1', 46341, 46301]], source, config['aliases'])
+    records, missing = project_records([current], spec, config['aliases'], 'RADIO')
+    assert not missing
+    assert records[0]['values'] == ['H1', 46301, 46341]

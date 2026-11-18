@@ -235,7 +235,7 @@ class RekapSourceAPI:
 
 def test_cod_reader_only_queries_the_previously_created_rekap_file():
     config = load_config(ROOT / "config/mitra.json")
-    config["sources"] = [config["sources"][0], config["sources"][27]]
+    config["sources"] = [config["sources"][0], next(s for s in config["sources"] if s["group"] == "RADIO")]
     profile = json.loads((ROOT / "config/cod2026.json").read_text())
     api = RekapSourceAPI(config, profile)
     reader = CODRekapReader(api, config, profile)
@@ -250,7 +250,7 @@ def test_cod_reader_only_queries_the_previously_created_rekap_file():
 
 def test_cod_reader_rejects_mixed_refresh_snapshots():
     config = load_config(ROOT / "config/mitra.json")
-    config["sources"] = [config["sources"][0], config["sources"][27]]
+    config["sources"] = [config["sources"][0], next(s for s in config["sources"] if s["group"] == "RADIO")]
     profile = json.loads((ROOT / "config/cod2026.json").read_text())
     api = RekapSourceAPI(config, profile)
     api.change_stamp = True

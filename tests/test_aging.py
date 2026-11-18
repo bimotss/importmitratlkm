@@ -298,3 +298,38 @@ def test_duplicate_radio_statuses_keep_independent_history_across_rekap_cod_and_
     data.rows[0][4] = "07.CT"
     cod, _ = project_records([data], spec, config["aliases"], "RADIO", tracker)
     assert [r["values"][pos] for r in cod] == [0, 13]
+
+
+def test_new_fo_aging_uses_actual_progress_entry_instead_of_finish_date():
+    config = load_config(ROOT / 'config/mitra.json')
+    tracker = AgingTracker(today=date(2026, 11, 18))
+    source = {'title': 'data_TEST', 'group': 'FO', 'start': 2}
+    headers = ['SITE ID', 'SP', 'Tanggal Inhand', 'STATUS VERIFIKASI COD',
+               'Tanggal Finish Perizinan', 'Real Start Progress']
+    row = ['A1', 'SP-2026', '01/11/2026', '05. L0 - Perizinan', '03/11/2026', '15/11/2026']
+    data = parse_source([headers, row], source, config['aliases'])
+    assert project(data, ['Aging Progress'], config['aliases'], tracker) == [[3]]
+    # An edit happened yesterday, between two imports: use event day, not polling day.
+    row[3], row[5] = '06. L0 - Material Preparation', '17/11/2026'
+    data = parse_source([headers, row], source, config['aliases'])
+    assert project(data, ['Aging Progress'], config['aliases'], tracker) == [[1]]
+    # Even if status cycled back between polls, its latest entry time is authoritative.
+    row[5] = '18/11/2026'
+    data = parse_source([headers, row], source, config['aliases'])
+    assert project(data, ['Aging Progress'], config['aliases'], tracker) == [[0]]
+
+
+def test_current_radio_aging_uses_actual_edit_date_between_imports(tmp_path):
+    config = load_config(ROOT / 'config/mitra.json')
+    source = next(s for s in config['sources'] if s['group'] == 'RADIO')
+    data = parse_source([['NE ID', 'HOP', 'WO/SP', 'Tanggal Inhand', 'Flagging Progress',
+                          'Tanggal Ganti Flagging'],
+                         ['NE1', 'H1', 'SP2026', '01/11/2026', '03. L0 - Survey', '13/11/2026']],
+                        source, config['aliases'])
+    path = tmp_path / 'state.json'
+    first = AgingTracker(path, today=date(2026, 11, 15))
+    assert project(data, ['Aging Progress'], config['aliases'], first) == [[2]]
+    first.save()
+    data.rows[0][4:] = ['05. L0 - Perizinan', '17/11/2026']
+    second = AgingTracker(path, today=date(2026, 11, 18))
+    assert project(data, ['Aging Progress'], config['aliases'], second) == [[1]]

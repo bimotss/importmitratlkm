@@ -110,8 +110,10 @@ def formatting(sheet_id, table):
         n = norm(header)
         pattern = None
         kind = "NUMBER"
-        if re.search(r"\bDATE\b|\bINHAND\b|\bIN-HAND\b", header.upper()) or n.startswith(("TGL", "TANGGAL")) or n in {"PLANRFS", "PLANNEDRFSDATE"}:
+        if re.search(r"\bDATE\b|\bINHAND\b|\bIN-HAND\b", header.upper()) or n.startswith(("TGL", "TANGGAL")) or n in {"PLANRFS", "PLANNEDRFSDATE", "REALSTARTPROGRESS"}:
             kind, pattern = "DATE", "dd/MM/yyyy"
+        elif n == "DURASIHOLDDAYS":
+            pattern = "0"
         elif n.startswith("NILAI"):
             pattern = "#,##0.##"
         elif "DEVIASI" in n:

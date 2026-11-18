@@ -43,7 +43,7 @@ class CODRekapReader:
         sources = self.config["sources"]
         for i, original in enumerate(sources):
             # Partner tabs in the REKAP retain fields needed by COD (REG, activation number, etc.)
-            # that are absent from the narrower 51/57-column summary tabs.
+            # that are absent from the fixed summary tabs.
             source = {**original, "id": self.source, "sheet": original["title"], "start": 2}
             LOG.info("COD [%s/%s] Membaca tab %s dari file Rekap Mitra", i + 1, len(sources), source["title"])
             progress(phase="cod_reading_rekap", message=f"COD: membaca {source['title']} dari Rekap Mitra",
@@ -103,6 +103,8 @@ def project_records(datasets, spec, aliases, group, aging_tracker=None):
         for row, aging in zip(data.rows, aging_rows):
             fields = {norm(k): row[i] for i, k in enumerate(data.keys)}
             fields["MITRA"] = data.name
+            if group == "RADIO" and fields.get("TGLORDERDITERIMA") in (None, "") and "TANGGALINHAND" in fields:
+                fields["TGLORDERDITERIMA"] = fields["TANGGALINHAND"]
             available.update(fields)
             def value(header, fields=fields):
                 return fields.get(norm(canonical(header, group, aliases)), "")

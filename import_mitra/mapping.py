@@ -10,8 +10,11 @@ def norm(value):
 
 def canonical(header, group, aliases):
     key = norm(header)
-    if group == "RADIO" and key == "PROGRAM":
-        return "TEMATIK"
+    if group == "RADIO":
+        radio_aliases = {"PROGRAM": "TEMATIK", "TANGGALINHAND": "TANGGAL INHAND",
+                         "BASTDATE": "TANGGAL FINISH BAST"}
+        if key in radio_aliases:
+            return radio_aliases[key]
     return aliases.get(key, " ".join(str(header).strip().upper().split()))
 
 
@@ -119,10 +122,13 @@ def project(data, headers, aliases, aging_tracker=None):
                 inhand_raw = row[positions["TGLORDERDITERIMA"]] if "TGLORDERDITERIMA" in positions else (
                     row[positions["INHANDDATE"]] if "INHANDDATE" in positions else ""
                 )
+                if not inhand_raw and "TANGGALINHAND" in positions:
+                    inhand_raw = row[positions["TANGGALINHAND"]]
                 existing_change = row[positions["TANGGALGANTIFLAGGING"]] if "TANGGALGANTIFLAGGING" in positions else None
                 is_2026 = is_order_2026(order_date_val=inhand_raw, sp_val=sp)
                 aging_days, change_serial, grouping = aging_tracker.track_record(
-                    "radio", key, flagging, is_2026=is_2026, existing_change_date=existing_change, order_date=inhand_raw
+                    "radio", key, flagging, is_2026=is_2026, existing_change_date=existing_change, order_date=inhand_raw,
+                    authoritative_change="TANGGALINHAND" in positions or "DURASIHOLDDAYS" in positions
                 )
             else:
                 sp = row[positions["SP"]] if "SP" in positions else (row[positions["WOSP"]] if "WOSP" in positions else "")
@@ -133,7 +139,13 @@ def project(data, headers, aliases, aging_tracker=None):
 
                 existing_change = None
                 norm_flag = norm(flagging)
-                if "SURVEY" in norm_flag and "TANGGALFINISHSURVEY" in positions:
+                if "REALSTARTPROGRESS" in positions:
+                    # Current-stage entry time. Finish dates belong to the stage
+                    # just left and must never seed the next stage's aging.
+                    existing_change = row[positions["REALSTARTPROGRESS"]]
+                elif "L0" in norm_flag or norm_flag == "14DONEBAST":
+                    existing_change = None
+                elif "SURVEY" in norm_flag and "TANGGALFINISHSURVEY" in positions:
                     existing_change = row[positions["TANGGALFINISHSURVEY"]]
                 elif "PERIZINAN" in norm_flag and "TANGGALFINISHPERIZINAN" in positions:
                     existing_change = row[positions["TANGGALFINISHPERIZINAN"]]
@@ -143,7 +155,8 @@ def project(data, headers, aliases, aging_tracker=None):
                     existing_change = row[positions["TANGGALFINISHINSTALASI"]]
 
                 aging_days, change_serial, grouping = aging_tracker.track_record(
-                    "fo", key, flagging, is_2026=is_2026, existing_change_date=existing_change, order_date=tgl_raw
+                    "fo", key, flagging, is_2026=is_2026, existing_change_date=existing_change, order_date=tgl_raw,
+                    authoritative_change="REALSTARTPROGRESS" in positions
                 )
 
         out = []
@@ -165,6 +178,9 @@ def project(data, headers, aliases, aging_tracker=None):
                 value = change_serial if change_serial is not None else ""
             else:
                 i = positions.get(key)
+                value = row[i] if i is not None else ""
+            if group == "RADIO" and key == "TGLORDERDITERIMA" and value in (None, ""):
+                i = positions.get("TANGGALINHAND")
                 value = row[i] if i is not None else ""
             out.append("" if value is None else value)
         result.append(out)

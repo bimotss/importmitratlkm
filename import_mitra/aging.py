@@ -175,6 +175,7 @@ class AgingTracker:
         is_2026: bool = True,
         existing_change_date: Any = None,
         order_date: Any = None,
+        authoritative_change: bool = False,
     ) -> tuple[int | None, int | None, str]:
         """
         Track flagging change and calculate aging.
@@ -205,7 +206,16 @@ class AgingTracker:
         bucket = self.state.setdefault(group_key, {})
         entry = bucket.get(key_str)
 
-        if entry is not None:
+        source_change = parse_date_value(existing_change_date) if authoritative_change else None
+        if source_change is not None and source_change <= self.today:
+            change_date = source_change
+            aging_days = max(0, (self.today - change_date).days)
+            bucket[key_str] = {
+                "flagging": flag_str,
+                "changed_at": change_date.isoformat(),
+                "serial": to_excel_serial(change_date),
+            }
+        elif entry is not None:
             prev_flag = norm(entry.get("flagging", ""))
             prev_date_str = entry.get("changed_at")
             prev_date = parse_date_value(prev_date_str) or self.today

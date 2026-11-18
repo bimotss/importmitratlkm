@@ -5,8 +5,8 @@ Pengganti importer Apps Script untuk **Rekap Mitra FO dan RADIO 2026**. Jalankan
 - Otomatis refresh setiap **3.600 detik / 1 jam**, selama service hidup. Refresh pertama langsung saat server menyala.
 - Dashboard dengan tombol **Refresh sekarang**, status/progres, dan waktu refresh berikutnya (WIB).
 - Refresh dari terminal juga tersedia. Satu proses impor saja boleh berjalan, termasuk antara dashboard dan CLI.
-- **34 tab mitra**: 27 FO + 7 RADIO. Daftar sudah diisi di `config/mitra.json`.
-- `DATA TIF FO`: **51 kolom**; `DATA TIF RADIO`: **57 kolom**; `DataDisatukan`: **19 kolom** yang sepadan di kedua format. Semua dipetakan lewat judul, bukan posisi kolom.
+- **35 tab mitra**: 28 FO + 7 RADIO. Daftar sudah diisi di `config/mitra.json`.
+- `DATA TIF FO`: **58 kolom**; `DATA TIF RADIO`: **70 kolom**; `DataDisatukan`: **19 kolom** yang sepadan di kedua format. Semua dipetakan lewat judul, bukan posisi kolom.
 - Data baru/bekas terhapus mengikuti sumber. Kolom yang tidak tersedia dikosongkan. Kolom tambahan sumber hanya disimpan di tab mitranya.
 - Kolom MITRA di tab mentah menggunakan ARRAYFORMULA berbasis SITE ID untuk FO dan HOP untuk RADIO. Sheet gabungan berisi hasil pemetaan, bukan IMPORTRANGE.
 - Setelah staging disalin, area spill MITRA benar-benar dikosongkan sebelum formula dipasang; seluruh hasil nama mitra diperiksa kembali sebelum job dinyatakan sukses. Ini mencegah `#REF!` akibat sel kosong semu dari hasil paste.
@@ -49,7 +49,7 @@ Token/JSON Google ada dalam `secrets/`, dikecualikan dari Git. Simpan di VPS mel
 ### B. Service account (tanpa login browser)
 
 1. Aktifkan Sheets API, buat service account dan download JSON key ke `secrets/service-account.json`.
-2. Share **34 spreadsheet sumber sebagai Viewer** ke `client_email` service account; share **spreadsheet tujuan sebagai Editor**. Berbagi tab saja tidak cukup.
+2. Share **35 spreadsheet sumber sebagai Viewer** ke `client_email` service account; share **spreadsheet tujuan sebagai Editor**. Berbagi tab saja tidak cukup.
 3. Ubah `.env`:
 
 ```dotenv
@@ -184,7 +184,7 @@ Jangan jalankan `pip` dengan `sudo`. Jika service berhenti saat staging, hasil l
 - `config/mitra.json`: sumber, jenis FO/RADIO, baris mulai minimal, judul format tetap, serta alias judul yang memang sepadan. Menambah kolom sumber tidak menambah kolom gabungan secara otomatis.
 - Header sumber dicari di 10 baris pertama. Baris tanpa SITE ID / NE ID dilewati. Kolom REGION/REG tidak ditebak menjadi REGIONAL TIF.
 - Data dibaca sebagai nilai terakhir Google Sheets. Formula pada sumber (termasuk lookup STATUS INFRA) harus sudah benar dan punya izin IMPORTRANGE bila digunakan. VPS tidak membuat lookup/status baru dan tidak memperbaiki `#REF!` atau `#N/A` sumber.
-- Sumber berjumlah 34 dan dibaca berurutan; API diperlambat menjadi 45 read/write requests per menit, disertai exponential backoff untuk quota/transient errors. Pindah VPS menghilangkan batas durasi eksekusi Apps Script; [kuota Sheets API tetap berlaku](https://developers.google.com/workspace/sheets/api/limits).
+- Sumber berjumlah 35 dan dibaca berurutan; API diperlambat menjadi 45 read/write requests per menit, disertai exponential backoff untuk quota/transient errors. Pindah VPS menghilangkan batas durasi eksekusi Apps Script; [kuota Sheets API tetap berlaku](https://developers.google.com/workspace/sheets/api/limits).
 - Staging membutuhkan ruang sementara di file tujuan. Import ditolak sebelum staging jika diperkirakan melampaui batas 20 juta sel.
 - Jadwal menggunakan interval sejak service dimulai, bukan jaminan selesai tepat di menit `:00`. Jadwal yang terlewat ketika impor masih berjalan dilewati, tidak ditumpuk. Tombol manual tidak mengubah jadwal hourly.
 - Status terakhir ada di `runtime/status.json`, log service: `journalctl -u import-mitra -f`. Jika server mati, jadwal berhenti hingga service hidup kembali.
@@ -201,3 +201,9 @@ Jangan jalankan `pip` dengan `sudo`. Jika service berhenti saat staging, hasil l
 Tes memakai data sintetis dan fake API. Tes tidak membutuhkan token dan tidak menulis ke Google Sheets.
 
 Referensi: [OAuth Desktop](https://developers.google.com/identity/protocols/oauth2/native-app), [masa berlaku token](https://developers.google.com/identity/protocols/oauth2#expiration), [batch atomik Sheets](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/batchUpdate).
+
+### Tanggal otomatis pada sumber mitra FO
+
+Header mitra menggunakan 57 kolom baru; rekap `DATA TIF FO` menambah `MITRA` menjadi 58 kolom. NJE membaca tab `data_NATA_JAYA_ELEKTRO`. Untuk mencatat tanggal saat dropdown progress diedit, pasang [MitraProgress.gs](apps_script/MitraProgress.gs) pada setiap file sumber mengikuti [petunjuk pemasangan](apps_script/README.md). Trigger ini hanya mencatat tanggal sumber; impor terjadwal tetap dijalankan Python/VPS. Pertahankan handler tanggal ini saat menonaktifkan trigger **impor** Apps Script lama.
+
+RADIO memakai 69 header sumber dan `MITRA` (70 kolom rekap). `Inhand Date` dan `Tanggal Inhand` dipertahankan terpisah. Tanggal milestone dan `Durasi Hold (Days)` ikut diimpor; `BAST Date` sumber lama dipetakan ke `Tanggal Finish BAST`. Aging format baru mengikuti `Tanggal Ganti Flagging` sumber.
