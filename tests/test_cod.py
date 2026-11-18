@@ -456,7 +456,9 @@ def test_combined_progress_uses_source_label_as_default_for_new_statuses(setup):
     sync, _, _ = setup
     fo = combined_progress_formula('FO', 'B', 'V')
     radio = combined_progress_formula('RADIO', 'K', 'AU')
-    assert fo.endswith(',V2:V)))') and radio.endswith(',AU2:AU)))')
+    assert fo.endswith(',V2:V))))') and radio.endswith(',AU2:AU))))')
+    assert 'IF(V2:V="","",SWITCH(' in fo
+    assert 'IF(AU2:AU="","",SWITCH(' in radio
     assert 'AT2:AT' not in radio
     for group in ['FO', 'RADIO']:
         assert combined_flagging('03. L0 - Survey', group) == '03. L0 - Survey'

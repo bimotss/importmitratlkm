@@ -178,7 +178,8 @@ def combined_progress_formula(group, key_column, status_column, separator=","):
     status = f"{status_column}2:{status_column}"
     pairs = [json.dumps(value) for pair in COMBINED_FLAGGING_MAP[group].items() for value in pair]
     expression = separator.join([status, *pairs, status])
-    return f'=ARRAYFORMULA(IF({key}=""{separator}""{separator}SWITCH({expression})))'
+    return (f'=ARRAYFORMULA(IF({key}=""{separator}""{separator}'
+            f'IF({status}=""{separator}""{separator}SWITCH({expression}))))')
 
 
 def combined_progress_requests(profile, heads=None):
