@@ -71,7 +71,12 @@ def business_key(values):
         return None
     if str(values[0]).startswith(("#REF!", "#N/A", "#VALUE!", "#ERROR!")):
         raise ValueError("Kolom kunci COD mengandung error; perbaiki sebelum mengganti data.")
-    return tuple(norm(v) for v in values)
+    key = []
+    for value in values:
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        key.append(norm("" if value is None else str(value)))
+    return tuple(key)
 
 
 def keep_row_positions(records, old_keys):

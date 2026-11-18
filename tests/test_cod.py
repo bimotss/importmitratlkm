@@ -509,3 +509,11 @@ def test_milestones_project_to_appended_columns_and_combined_formulas(setup):
         assert "'Data TIF FO'!B2:B" in formula and "'Data TIF Radio'!K2:K" in formula
         assert formula.count('ARRAYFORMULA(IF(') == 2  # blank inputs stay blank; zero is retained
         assert 'UPPER(' not in formula
+
+
+def test_business_keys_preserve_zero_sp_across_numeric_and_formula_cells():
+    from import_mitra.cod import business_key
+    expected = business_key(['SITE-1', '0', 'AVIAT'])
+    assert business_key(['SITE-1', 0, 'AVIAT']) == expected
+    assert business_key(['SITE-1', 0.0, 'AVIAT']) == expected
+    assert business_key(['SITE-1', '', 'AVIAT']) != expected
