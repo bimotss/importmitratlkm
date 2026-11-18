@@ -466,3 +466,13 @@ def test_combined_progress_uses_source_label_as_default_for_new_statuses(setup):
             assert before in formula and after in formula
     requests = combined_progress_requests(sync.profile)
     assert [r['updateCells']['start']['columnIndex'] for r in requests] == [62, 87]
+
+
+def test_combined_progress_preserves_semicolon_workbook(setup):
+    from import_mitra.cod import combined_progress_requests
+    sync, _, _ = setup
+    heads = {"all": {"header_cells": [{"userEnteredValue": {"formulaValue": '=LET(a;VSTACK(A:A;B:B);a)'}}]}}
+    requests = combined_progress_requests(sync.profile, heads)
+    for request in requests:
+        formula = request['updateCells']['rows'][0]['values'][0]['userEnteredValue']['formulaValue']
+        assert ';' in formula and ',' not in formula
