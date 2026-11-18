@@ -198,13 +198,9 @@ def project(data, headers, aliases, aging_tracker=None):
     return result
 
 
-def combined_flagging(value, group):
-    """Use COD's common progress labels; retain unknown labels and source blanks."""
-    if value in (None, ""):
-        return ""
-    if group == "FO":
-        return {"02.OGP SURVEY": "02.OGP SURVEY / MATERIAL PREPARATION"}.get(value, value)
-    return {
+COMBINED_FLAGGING_MAP = {
+    "FO": {"02.OGP SURVEY": "02.OGP SURVEY / MATERIAL PREPARATION"},
+    "RADIO": {
         "00.DROP": "00.DROP SMILE",
         "02.MATERIAL PREPARATION": "02.OGP SURVEY / MATERIAL PREPARATION",
         "03.PERIZINAN": "04.PERIZINAN",
@@ -214,7 +210,15 @@ def combined_flagging(value, group):
         "07.CT": "09.CT",
         "08.UT": "10.UT",
         "09.BAST": "11.BAST",
-    }.get(value, value)
+    },
+}
+
+
+def combined_flagging(value, group):
+    """Use the common progress labels while preserving new source labels and blanks."""
+    if value in (None, ""):
+        return ""
+    return COMBINED_FLAGGING_MAP[group].get(value, value)
 
 
 def partner_formula(data):

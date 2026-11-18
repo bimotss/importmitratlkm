@@ -129,6 +129,14 @@ def test_cod_write_does_not_touch_header_columns_or_existing_helpers(setup):
         if "updateSheetProperties" in request:
             assert request["updateSheetProperties"]["fields"] == "gridProperties.rowCount"
         if "updateCells" in request:
+            if "start" in request["updateCells"]:
+                start = request["updateCells"]["start"]
+                expected_column = {sync.profile["groups"]["fo"]["sheet_id"]: 62,
+                                   sync.profile["groups"]["radio"]["sheet_id"]: 87}
+                assert start["rowIndex"] == 1
+                assert start["columnIndex"] == expected_column[start["sheetId"]]
+                assert request["updateCells"]["fields"] == "userEnteredValue"
+                continue
             area = request["updateCells"]["range"]
             assert area["startRowIndex"] == 1
             allowed = groups[area["sheetId"]]["managed_columns"]
@@ -440,3 +448,21 @@ def test_added_records_do_not_duplicate_spill_helpers(setup, formula):
     assert not any(r.get('copyPaste', {}).get('pasteType') == 'PASTE_FORMULA'
                    and r['copyPaste']['destination']['sheetId'] == sync.profile['groups']['fo']['sheet_id']
                    and r['copyPaste']['destination']['startColumnIndex'] == 69 for r in api.requests)
+
+
+def test_combined_progress_uses_source_label_as_default_for_new_statuses(setup):
+    from import_mitra.cod import combined_progress_formula, combined_progress_requests
+    from import_mitra.mapping import COMBINED_FLAGGING_MAP, combined_flagging
+    sync, _, _ = setup
+    fo = combined_progress_formula('FO', 'B', 'V')
+    radio = combined_progress_formula('RADIO', 'K', 'AU')
+    assert fo.endswith(',V2:V)))') and radio.endswith(',AU2:AU)))')
+    assert 'AT2:AT' not in radio
+    for group in ['FO', 'RADIO']:
+        assert combined_flagging('03. L0 - Survey', group) == '03. L0 - Survey'
+        assert combined_flagging('', group) == ''
+        formula = fo if group == 'FO' else radio
+        for before, after in COMBINED_FLAGGING_MAP[group].items():
+            assert before in formula and after in formula
+    requests = combined_progress_requests(sync.profile)
+    assert [r['updateCells']['start']['columnIndex'] for r in requests] == [62, 87]

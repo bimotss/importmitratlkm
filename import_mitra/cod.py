@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from .google_api import SHEET_CELL_LIMIT
 from .importer import value_chunks
-from .mapping import canonical, col, norm, parse_source, project, quoted
+from .mapping import COMBINED_FLAGGING_MAP, canonical, col, norm, parse_source, project, quoted
 
 LOG = logging.getLogger(__name__)
 STAGE = re.compile(r"^_IMCOD_[a-f0-9]{12}_[012]$")
@@ -168,6 +168,33 @@ def spill_formula(formula):
     return formula.lstrip().startswith("={") or bool(re.search(
         r"\b(ARRAYFORMULA|LET|MAP|FILTER|QUERY|SCAN|BYROW|BYCOL|VSTACK|HSTACK|SORT|UNIQUE|SEQUENCE|MAKEARRAY)\s*\(",
         formula, re.IGNORECASE))
+
+
+
+def combined_progress_formula(group, key_column, status_column):
+    """The sheet helper and Python projection must use the same status mapping."""
+    key = f"{key_column}2:{key_column}"
+    status = f"{status_column}2:{status_column}"
+    pairs = [json.dumps(value) for pair in COMBINED_FLAGGING_MAP[group].items() for value in pair]
+    expression = ",".join([status, *pairs, status])
+    return f'=ARRAYFORMULA(IF({key}="","",SWITCH({expression})))'
+
+
+def combined_progress_requests(profile):
+    requests = []
+    for group, key_name, status_name, target_name in (
+        ("fo", "SITEID", "STATUSVERIFIKASICOD", "FLAGGINGFORADIO"),
+        ("radio", "NEID", "FLAGGINGPROGRESS", "FLAGGINGNUDIPAKE"),
+    ):
+        spec = profile["groups"][group]
+        positions = {norm(header): i for i, header in enumerate(spec["headers"])}
+        target = positions[target_name]
+        formula = combined_progress_formula(group.upper(), col(positions[key_name] + 1),
+                                            col(positions[status_name] + 1))
+        requests.append({"updateCells": {"start": {"sheetId": spec["sheet_id"], "rowIndex": 1,
+            "columnIndex": target}, "rows": [{"values": [{"userEnteredValue": {"formulaValue": formula}}]}],
+            "fields": "userEnteredValue"}})
+    return requests
 
 
 def cod_number_formats(spec, height):
@@ -473,6 +500,7 @@ class CODSync:
                             "destination": {"sheetId": sid, "startRowIndex": start, "endRowIndex": end,
                                             "startColumnIndex": index, "endColumnIndex": index + 1},
                             "pasteType": "PASTE_FORMULA", "pasteOrientation": "NORMAL"}})
+            requests.extend(combined_progress_requests(self.profile))
             requests.extend(restore_filters)
             progress(phase="cod_publishing", message="Memperbarui data COD tanpa mengubah kolom")
             self.api.batch(self.target, requests)
