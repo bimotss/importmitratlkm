@@ -356,7 +356,7 @@ def test_run_verifies_contiguity_after_native_compaction(setup, monkeypatch, has
         result = sync.run(datasets)
         assert result['fo']['compacted_blank_rows'] == 1
         assert result['fo']['last_row'] == 3
-    assert "'Data TIF FO'!B2:B9" in read_ranges
+    assert "'Data TIF FO'!B2:B10" in read_ranges  # live metadata from the fake API
 
 
 @pytest.mark.parametrize("reconciled", [True, False])
@@ -380,3 +380,40 @@ def test_cod_saves_aging_history_only_after_reconciliation(setup, monkeypatch, r
         with pytest.raises(ValueError, match="rekonsiliasi"):
             sync.run(datasets)
         assert not state.exists()
+
+
+def test_reconciliation_detects_rows_added_beyond_planned_grid(setup, monkeypatch):
+    sync, api, datasets = setup
+    original_metadata, original_publish, original_read = api.metadata, sync.publish, api.read_many
+    published = False
+    checked = []
+
+    def metadata(target):
+        result = original_metadata(target)
+        if published:
+            result['sheets'][0]['properties']['gridProperties']['rowCount'] = 20
+        return result
+
+    def publish(*args):
+        nonlocal published
+        original_publish(*args)
+        published = True
+
+    def read_many(target, ranges):
+        if len(ranges) == 3 and any('!K2:' in r for r in ranges):
+            checked.append(ranges[0])
+            fo = [['F1'], ['F2']]
+            if ranges[0].endswith('B20'):
+                fo += [[]] * 16 + [['UNEXPECTED_TAIL']]
+            return [{'values': fo}, {'values': [['R1'], ['R2']]},
+                    {'values': [['S1'], ['S2'], ['S3'], ['S4']]}]
+        return original_read(target, ranges)
+
+    monkeypatch.setattr(api, 'metadata', metadata)
+    monkeypatch.setattr(api, 'read_many', read_many)
+    monkeypatch.setattr(sync, 'publish', publish)
+    monkeypatch.setattr('import_mitra.cod.time.sleep', lambda _: None)
+    with pytest.raises(ValueError, match='rekonsiliasi'):
+        sync.run(datasets)
+    assert len(checked) == 4
+    assert all(r.endswith('B20') for r in checked)

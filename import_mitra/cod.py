@@ -365,16 +365,17 @@ class CODSync:
         for key, stats in self.compact(heads, plans, progress).items():
             summary[key].update(stats)
         # Native formulas may require a short recalculation delay.
-        ranges = []
-        for key, c in (("fo", 2), ("radio", 11), ("all", 1)):
-            spec = self.profile["groups"][key]
-            remaining_grid = (heads[key]["properties"]["gridProperties"]["rowCount"]
-                              - plans[key]["stats"].get("compacted_blank_rows", 0))
-            end = max(plans[key]["stats"]["last_row"], remaining_grid, 2)
-            ranges.append(f"{quoted(spec['title'])}!{col(c)}2:{col(c)}{end}")
         expected = [summary["fo"]["rows"], summary["radio"]["rows"], summary["total"]]
         for attempt in range(4):
-            self.heads()
+            _, current_heads = self.heads()
+            ranges = []
+            for key, c in (("fo", 2), ("radio", 11), ("all", 1)):
+                spec = self.profile["groups"][key]
+                # Inspect the live grid: rows can grow while Google recalculates
+                # or another writer edits the workbook after planning.
+                end = max(plans[key]["stats"]["last_row"],
+                          current_heads[key]["properties"]["gridProperties"]["rowCount"], 2)
+                ranges.append(f"{quoted(spec['title'])}!{col(c)}2:{col(c)}{end}")
             actual = self.api.read_many(self.target, ranges)
             counts = [sum(bool(r and r[0] not in (None, "")) for r in v.get("values", [])) for v in actual]
             contiguous = all(len(v.get("values", [])) >= count and
