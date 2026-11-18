@@ -65,7 +65,7 @@ def load_config(path: Path):
     config = json.loads(path.read_text())
     sources, schemas = config["sources"], config["schemas"]
     titles = [s["title"] for s in sources]
-    reserved = {"DATA TIF FO", "DATA TIF RADIO", "DataDisatukan", "Kontrol", "_Import_Status", "_Peta_Kolom", "_Source_Errors"}
+    reserved = {"DATA TIF FO", "DATA TIF RADIO", "DataDisatukan", "Kontrol", "_Import_Status", "_Peta_Kolom", "_Source_Errors", "_Source_Config"}
     if not sources or len(set(titles)) != len(titles) or any(t in reserved for t in titles):
         raise ValueError("Nama tab mitra kosong, duplikat, atau memakai nama tab sistem.")
     if any(s["group"] not in {"FO", "RADIO"} for s in sources):

@@ -73,13 +73,16 @@ def build_tables(datasets, config, interval_seconds=3600, public_url="", aging_t
         Table("_Import_Status", ["MITRA", "JENIS", "STATUS", "BARIS", "DIPERBARUI", "KETERANGAN"],
               [[d.config["title"], d.config["group"], "Selesai", len(d.rows), now, "VPS Python"]
                for d in datasets]),
+        Table("_Source_Config", ["MITRA", "JENIS", "SPREADSHEET ID", "TAB SUMBER", "BARIS MULAI", "LINK"],
+              [[source["title"], source["group"], source["id"], source["sheet"], source.get("start", 2),
+                "https://docs.google.com/spreadsheets/d/" + source["id"] + "/edit"] for source in config["sources"]]),
         Table("_Peta_Kolom", ["MITRA", "JENIS", "KOLOM SUMBER", "JUDUL SUMBER",
                              "JUDUL GABUNGAN", "KOLOM GABUNGAN"], audit),
         Table("Kontrol", ["KONTROL VPS", "NILAI"], [
             ["STATUS", f"Selesai: {len(combined):,} baris"], ["MESIN", "Python di VPS (tanpa Apps Script)"],
             ["AUTO UPDATE", f"Setiap {interval_seconds // 60} menit selama service VPS hidup"],
             ["TERAKHIR SELESAI", now], ["REFRESH MANUAL", public_url or "Gunakan dashboard VPS"],
-            ["TOMBOL", "Buka dashboard → Refresh sekarang"],
+            ["TOMBOL", "Buka dashboard → Impor Mitra + COD"],
             ["CATATAN", "Nonaktifkan trigger dan menu impor Apps Script lama saat pindah ke VPS."],
         ]),
     ])

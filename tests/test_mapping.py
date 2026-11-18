@@ -196,3 +196,14 @@ def test_source_error_is_empty_with_note_and_ledger_without_changing_source(conf
 def test_source_error_in_record_identity_aborts_import(config):
     with pytest.raises(ValueError, match='SITE ID / NE ID berisi error'):
         parse_source([['SITE ID'], ['#REF!']], {'title': 'data_TEST', 'group': 'FO'}, config['aliases'])
+
+
+def test_source_config_sheet_matches_the_manifest(config):
+    tables, _ = build_tables([], config, public_url='https://cnopdashboard.site/mitra-history')
+    manifest = next(t for t in tables if t.title == '_Source_Config')
+    assert len(manifest.rows) == len(config['sources']) == 35
+    assert {row[0] for row in manifest.rows} == {s['title'] for s in config['sources']}
+    nje = next(row for row in manifest.rows if row[0] == 'data_NJE')
+    assert nje[3] == 'data_NATA_JAYA_ELEKTRO'
+    control = next(t for t in tables if t.title == 'Kontrol')
+    assert ['REFRESH MANUAL', 'https://cnopdashboard.site/mitra-history'] in control.rows
