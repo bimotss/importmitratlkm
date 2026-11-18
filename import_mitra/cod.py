@@ -431,7 +431,12 @@ class CODSync:
             for key in heads:
                 if current[key]["header_cells"] != heads[key]["header_cells"]:
                     raise ValueError("Header COD berubah saat persiapan; pembaruan dibatalkan.")
-            requests = []
+            # Native copyPaste skips filter-hidden destination rows and can
+            # append copies beyond the grid. Unfilter and restore in the SAME
+            # atomic batch, keeping the latest user criteria and sort settings.
+            requests = [{"clearBasicFilter": {"sheetId": self.profile["groups"][key]["sheet_id"]}}
+                        for key in self.profile["groups"] if current[key].get("basic_filter")]
+            restore_filters = []
             for key, spec in self.profile["groups"].items():
                 sid = spec["sheet_id"]
                 old_height = heads[key]["properties"]["gridProperties"]["rowCount"]
@@ -440,10 +445,9 @@ class CODSync:
                     requests.append({"updateSheetProperties": {"properties": {"sheetId": sid,
                         "gridProperties": {"rowCount": height}}, "fields": "gridProperties.rowCount"}})
                 requests.extend(cod_number_formats(spec, height))
-                basic_filter = heads[key].get("basic_filter")
-                if basic_filter and basic_filter["range"].get("endRowIndex", height) < height:
-                    # Retain the user's sort/criteria while including appended records.
-                    requests.append({"setBasicFilter": {"filter": {
+                basic_filter = current[key].get("basic_filter")
+                if basic_filter:
+                    restore_filters.append({"setBasicFilter": {"filter": {
                         **basic_filter, "range": {**basic_filter["range"], "endRowIndex": height}}}})
                 for source, dest, length in column_runs(spec["managed_columns"]):
                     area = {"sheetId": sid, "startRowIndex": 1, "endRowIndex": height,
@@ -469,6 +473,7 @@ class CODSync:
                             "destination": {"sheetId": sid, "startRowIndex": start, "endRowIndex": end,
                                             "startColumnIndex": index, "endColumnIndex": index + 1},
                             "pasteType": "PASTE_FORMULA", "pasteOrientation": "NORMAL"}})
+            requests.extend(restore_filters)
             progress(phase="cod_publishing", message="Memperbarui data COD tanpa mengubah kolom")
             self.api.batch(self.target, requests)
         finally:

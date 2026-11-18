@@ -125,3 +125,14 @@ def test_api_validation_endpoint(tmp_path):
         report_file.write_text("CORRUPTED_JSON{{{")
         res_corrupt = client.get("/api/validation")
         assert res_corrupt.status_code == 500
+
+
+def test_cli_records_public_dashboard_trigger(tmp_path, monkeypatch):
+    import import_mitra.__main__ as cli
+    calls = []
+    monkeypatch.setattr(Settings, 'load', lambda: settings(tmp_path))
+    monkeypatch.setattr(cli, 'JobRunner', lambda *args: SimpleNamespace(
+        run=lambda **kwargs: calls.append(kwargs) or {'total': 1}))
+    monkeypatch.setattr('sys.argv', ['import-mitra', 'once', '--trigger', 'web'])
+    assert cli.main() == 0
+    assert calls == [{'dry_run': False, 'trigger': 'web', 'job_type': 'normal'}]

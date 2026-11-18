@@ -1,0 +1,21 @@
+[Unit]
+Description=Manual Mitra and COD import requested by dashboard admin
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=importmitra
+Group=importmitra
+WorkingDirectory=/opt/import-mitra
+EnvironmentFile=/opt/import-mitra/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/import-mitra/.venv/bin/python -m import_mitra once --trigger web
+SuccessExitStatus=2
+TimeoutStartSec=1800
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/import-mitra/runtime

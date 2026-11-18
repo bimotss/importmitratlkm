@@ -22,7 +22,7 @@ ROOT = Path(__file__).parents[1]
 class CODMemoryAPI:
     def __init__(self, profile):
         self.profile = profile
-        self.requests, self.writes = [], []
+        self.requests, self.writes, self.batches = [], [], []
         self.stages = {}
         self.header_changed = False
         self.values = {
@@ -78,6 +78,7 @@ class CODMemoryAPI:
         self.uploads.setdefault(title, []).extend(copy.deepcopy(rows))
 
     def batch(self, target, requests, **kwargs):
+        self.batches.append(copy.deepcopy(requests))
         self.requests.extend(copy.deepcopy(requests))
         for request in requests:
             if "addSheet" in request:
@@ -298,10 +299,21 @@ def test_filter_expands_without_losing_existing_criteria(setup):
                 'criteria': {'21': {'hiddenValues': ['01.HOLD']}},
                 'sortSpecs': [{'dimensionIndex': 1, 'sortOrder': 'ASCENDING'}]}
     heads['fo']['basic_filter'] = copy.deepcopy(original)
+    metadata = api.metadata
+    def with_filter(target):
+        result = metadata(target)
+        result['sheets'][0]['basicFilter'] = copy.deepcopy(original)
+        return result
+    api.metadata = with_filter
     sync.publish(meta, heads, plans, lambda **kwargs: None)
     filters = [r['setBasicFilter']['filter'] for r in api.requests if 'setBasicFilter' in r]
     assert filters == [{**original, 'range': {**original['range'], 'endRowIndex': 10}}]
     assert heads['fo']['basic_filter'] == original
+    commit = next(batch for batch in api.batches if any('copyPaste' in r for r in batch))
+    clear = next(i for i, r in enumerate(commit) if 'clearBasicFilter' in r)
+    paste = [i for i, r in enumerate(commit) if 'copyPaste' in r]
+    restore = next(i for i, r in enumerate(commit) if 'setBasicFilter' in r)
+    assert clear < min(paste) < max(paste) < restore
 
 
 def test_compaction_deletes_whole_rows_descending_and_preserves_anchor(setup):

@@ -18,6 +18,7 @@ def main():
     sub.add_parser("serve", help="Dashboard + jadwal otomatis setiap jam")
     once = sub.add_parser("once", help="Refresh satu kali dari terminal")
     once.add_argument("--dry-run", action="store_true", help="Baca dan validasi semua sumber tanpa menulis")
+    once.add_argument("--trigger", choices=("cli", "web"), default="cli")
     cod = sub.add_parser("sync-cod", help="Perbarui COD 2026 tanpa mengganti header/kolom/rumus bantu")
     cod.add_argument("--dry-run", action="store_true", help="Periksa pemetaan COD tanpa menulis")
     sub.add_parser("check", help="Periksa akses tujuan + semua sumber tanpa menulis")
@@ -95,7 +96,8 @@ def main():
                     result = runner.run(dry_run=args.dry_run, trigger="cli", job_type="sync_cod")
                 else:
                     runner = JobRunner(settings, lambda: make_importer(settings))
-                    result = runner.run(dry_run=args.dry_run, trigger="cli", job_type="dry_run" if args.dry_run else "normal")
+                    result = runner.run(dry_run=args.dry_run, trigger=getattr(args, "trigger", "cli"),
+                                        job_type="dry_run" if args.dry_run else "normal")
             print(json.dumps(result, indent=2))
     except BusyError as exc:
         print(str(exc), file=sys.stderr)

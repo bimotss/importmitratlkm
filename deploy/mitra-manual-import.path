@@ -1,0 +1,9 @@
+[Unit]
+Description=Manual Mitra import requests from authenticated dashboard
+
+[Path]
+PathChanged=/opt/botCOD/data/mitra-import.request
+Unit=mitra-manual-import.service
+
+[Install]
+WantedBy=multi-user.target
