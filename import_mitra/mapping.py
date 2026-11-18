@@ -3,6 +3,13 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 
+MILESTONE_HEADERS = [
+    "Tanggal Inhand", "Tanggal Finish Survey", "Tanggal Finish DRM", "Tanggal Finish Perizinan",
+    "Tanggal Finish Material Preparation", "Tanggal Material Onsite", "Tanggal Finish Instalasi",
+    "Tanggal Finish CT", "Tanggal Finish UT", "Tanggal Finish BAST", "Tanggal DROP",
+    "Tanggal Plan DROP", "Tanggal HOLD", "Durasi Hold (Days)",
+]
+
 
 def norm(value):
     return re.sub(r"[^A-Z0-9]", "", str(value or "").strip().upper())

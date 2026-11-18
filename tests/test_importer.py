@@ -123,7 +123,7 @@ def test_staged_commit_preserves_tab_ids_and_unrelated_content(setup):
     assert by_title(api, "DATA TIF FO")["properties"]["sheetId"] == 10
     assert by_title(api, "DATA TIF FO")["properties"]["gridProperties"]["columnCount"] == 58
     assert by_title(api, "DATA TIF RADIO")["properties"]["gridProperties"]["columnCount"] == 70
-    assert by_title(api, "DataDisatukan")["properties"]["gridProperties"]["columnCount"] == 19
+    assert by_title(api, "DataDisatukan")["properties"]["gridProperties"]["columnCount"] == 33
     assert by_title(api, "Unrelated")["values"] == [["KEEP"]]
     assert not any(s["properties"]["title"].startswith("_IM_STAGING_") for s in api.sheets.values())
     commits = [batch for batch in api.batches if any("copyPaste" in r for r in batch)]

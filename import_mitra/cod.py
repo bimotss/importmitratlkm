@@ -12,7 +12,16 @@ from datetime import datetime, timezone
 from .cleaning import formula_separator
 from .google_api import SHEET_CELL_LIMIT
 from .importer import value_chunks
-from .mapping import COMBINED_FLAGGING_MAP, canonical, col, norm, parse_source, project, quoted
+from .mapping import (
+    COMBINED_FLAGGING_MAP,
+    MILESTONE_HEADERS,
+    canonical,
+    col,
+    norm,
+    parse_source,
+    project,
+    quoted,
+)
 
 LOG = logging.getLogger(__name__)
 STAGE = re.compile(r"^_IMCOD_[a-f0-9]{12}_[012]$")
@@ -206,6 +215,28 @@ def combined_progress_requests(profile, heads=None):
     return requests
 
 
+def combined_milestone_requests(profile):
+    """Stack milestones in the same physical FO/Radio order as the combined site IDs."""
+    groups = profile["groups"]
+    requests = []
+    for header in MILESTONE_HEADERS:
+        sources, keys = [], []
+        for group, key_header in (("fo", "Site ID"), ("radio", "NE ID")):
+            spec = groups[group]
+            column = col(spec["headers"].index(header) + 1)
+            values = f"{quoted(spec['title'])}!{column}2:{column}"
+            key_column = col(spec["headers"].index(key_header) + 1)
+            keys.append(f"{quoted(spec['title'])}!{key_column}2:{key_column}")
+            sources.append(f'ARRAYFORMULA(IF({values}="";"";{values}))')
+        formula = (f'=IFERROR(LET(_im_keys;VSTACK({";".join(keys)});'
+                   f'_im_dates;VSTACK({";".join(sources)});FILTER(_im_dates;_im_keys<>""));"")')
+        requests.append({"updateCells": {"start": {"sheetId": groups["all"]["sheet_id"],
+            "rowIndex": 1, "columnIndex": groups["all"]["headers"].index(header)},
+            "rows": [{"values": [{"userEnteredValue": {"formulaValue": formula}}]}],
+            "fields": "userEnteredValue"}})
+    return requests
+
+
 def cod_number_formats(spec, height):
     """Correct known stale template formats without changing values or layout."""
     requests = []
@@ -218,6 +249,15 @@ def cod_number_formats(spec, height):
                 "sheetId": spec["sheet_id"], "startRowIndex": 1, "endRowIndex": height,
                 "startColumnIndex": column - 1, "endColumnIndex": column},
                 "cell": {"userEnteredFormat": {"numberFormat": {"type": kind, "pattern": pattern}}},
+                "fields": "userEnteredFormat.numberFormat"}})
+    for index, header in enumerate(spec["headers"]):
+        if header in MILESTONE_HEADERS:
+            duration = header == "Durasi Hold (Days)"
+            requests.append({"repeatCell": {"range": {
+                "sheetId": spec["sheet_id"], "startRowIndex": 1, "endRowIndex": height,
+                "startColumnIndex": index, "endColumnIndex": index + 1},
+                "cell": {"userEnteredFormat": {"numberFormat": {
+                    "type": "NUMBER" if duration else "DATE", "pattern": "0" if duration else "dd/MM/yyyy"}}},
                 "fields": "userEnteredFormat.numberFormat"}})
     return requests
 
@@ -510,6 +550,7 @@ class CODSync:
                                             "startColumnIndex": index, "endColumnIndex": index + 1},
                             "pasteType": "PASTE_FORMULA", "pasteOrientation": "NORMAL"}})
             requests.extend(combined_progress_requests(self.profile, current))
+            requests.extend(combined_milestone_requests(self.profile))
             requests.extend(restore_filters)
             progress(phase="cod_publishing", message="Memperbarui data COD tanpa mengubah kolom")
             self.api.batch(self.target, requests)

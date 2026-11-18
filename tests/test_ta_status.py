@@ -46,11 +46,13 @@ def test_cod_formats_fix_money_percent_and_status_without_touching_values():
     from import_mitra.cod import cod_number_formats
     p = json.loads((ROOT / 'config/cod2026.json').read_text())
     requests = cod_number_formats(p['groups']['fo'], 13752)
-    assert [r['repeatCell']['range']['startColumnIndex'] for r in requests] == [16, 17, 18, 21]
-    assert [r['repeatCell']['cell']['userEnteredFormat']['numberFormat']['type'] for r in requests] == [
+    assert [r['repeatCell']['range']['startColumnIndex'] for r in requests[:4]] == [16, 17, 18, 21]
+    assert [r['repeatCell']['cell']['userEnteredFormat']['numberFormat']['type'] for r in requests[:4]] == [
         'NUMBER', 'NUMBER', 'PERCENT', 'TEXT']
     assert all(r['repeatCell']['fields'] == 'userEnteredFormat.numberFormat' for r in requests)
-    assert cod_number_formats(p['groups']['radio'], 100) == []
+    radio = cod_number_formats(p['groups']['radio'], 100)
+    assert len(radio) == 14
+    assert [r['repeatCell']['cell']['userEnteredFormat']['numberFormat']['type'] for r in radio] == ['DATE'] * 13 + ['NUMBER']
 
 
 def test_legacy_duplicates_do_not_trigger_identity_drift_guard():

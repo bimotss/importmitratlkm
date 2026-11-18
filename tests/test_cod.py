@@ -108,7 +108,7 @@ def test_dry_run_preserves_existing_identity_and_reports_additions(setup):
     assert result["fo"]["retained"] == 1
     assert result["fo"]["added"] == 1
     assert result["fo"]["removed"] == 1
-    assert result["columns"] == {"fo": 104, "radio": 89, "all": 60}
+    assert result["columns"] == {"fo": 113, "radio": 103, "all": 74}
     assert result["total"] == 4
     assert not api.requests and not api.writes
 
@@ -134,7 +134,11 @@ def test_cod_write_does_not_touch_header_columns_or_existing_helpers(setup):
                 expected_column = {sync.profile["groups"]["fo"]["sheet_id"]: 62,
                                    sync.profile["groups"]["radio"]["sheet_id"]: 87}
                 assert start["rowIndex"] == 1
-                assert start["columnIndex"] == expected_column[start["sheetId"]]
+                if start["sheetId"] == sync.profile["groups"]["all"]["sheet_id"]:
+                    from import_mitra.mapping import MILESTONE_HEADERS
+                    assert groups[start["sheetId"]]["headers"][start["columnIndex"]] in MILESTONE_HEADERS
+                else:
+                    assert start["columnIndex"] == expected_column[start["sheetId"]]
                 assert request["updateCells"]["fields"] == "userEnteredValue"
                 continue
             area = request["updateCells"]["range"]
@@ -196,7 +200,7 @@ def test_standalone_cod_job_keeps_dashboard_metric_shape(setup, monkeypatch):
         **sync.run(datasets, progress, dry_run=dry_run), "sources": len(datasets)})
     result = CODImporter(sync).run(dry_run=True)
     assert result["fo"] == 2 and result["radio"] == 2 and result["total"] == 4
-    assert result["cod"]["columns"] == {"fo": 104, "radio": 89, "all": 60}
+    assert result["cod"]["columns"] == {"fo": 113, "radio": 103, "all": 74}
 
 
 def test_header_race_after_staging_aborts_before_live_write(setup):
@@ -478,3 +482,30 @@ def test_combined_progress_preserves_semicolon_workbook(setup):
     for request in requests:
         formula = request['updateCells']['rows'][0]['values'][0]['userEnteredValue']['formulaValue']
         assert ';' in formula and ',' not in formula
+
+
+def test_milestones_project_to_appended_columns_and_combined_formulas(setup):
+    from import_mitra.cod import combined_milestone_requests, project_records
+    from import_mitra.mapping import MILESTONE_HEADERS
+    sync, _, _ = setup
+    # Legacy inhand and the new Radio milestone are separate source fields.
+    source = {'title': 'pst_radio', 'group': 'RADIO', 'start': 2}
+    values = [46000 + i for i in range(13)] + [0]
+    data = parse_source([['NE ID', 'HOP', 'Inhand Date', *MILESTONE_HEADERS],
+                         ['RAD-1', 'HOP-1', 45000, *values]], source, sync.config['aliases'])
+    spec = sync.profile['groups']['radio']
+    records, _ = project_records([data], spec, sync.config['aliases'], 'RADIO')
+    result = records[0]['values']
+    assert result[spec['managed_columns'].index(4)] == 45000
+    for header, value in zip(MILESTONE_HEADERS, values):
+        column = spec['headers'].index(header) + 1
+        assert result[spec['managed_columns'].index(column)] == value
+    requests = combined_milestone_requests(sync.profile)
+    assert len(requests) == 14
+    for header, request in zip(MILESTONE_HEADERS, requests):
+        cell = request['updateCells']
+        assert cell['start']['columnIndex'] == sync.profile['groups']['all']['headers'].index(header)
+        formula = cell['rows'][0]['values'][0]['userEnteredValue']['formulaValue']
+        assert "'Data TIF FO'!B2:B" in formula and "'Data TIF Radio'!K2:K" in formula
+        assert formula.count('ARRAYFORMULA(IF(') == 2  # blank inputs stay blank; zero is retained
+        assert 'UPPER(' not in formula

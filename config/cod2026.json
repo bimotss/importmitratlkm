@@ -109,7 +109,16 @@
         "long dws",
         "Latlong",
         "Cek hari",
-        "percobaan"
+        "percobaan",
+        "Tanggal Inhand",
+        "Tanggal Finish DRM",
+        "Tanggal Finish Material Preparation",
+        "Tanggal Finish CT",
+        "Tanggal Finish UT",
+        "Tanggal Finish BAST",
+        "Tanggal DROP",
+        "Tanggal Plan DROP",
+        "Tanggal HOLD"
       ],
       "key_columns": [
         2,
@@ -163,7 +172,16 @@
         71,
         77,
         79,
-        88
+        88,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113
       ],
       "overrides": {
         "5": [
@@ -275,7 +293,21 @@
         "Latlong",
         "Radio",
         "Flagging nu dipake",
-        "NIM"
+        "NIM",
+        "Tanggal Inhand",
+        "Tanggal Finish Survey",
+        "Tanggal Finish DRM",
+        "Tanggal Finish Perizinan",
+        "Tanggal Finish Material Preparation",
+        "Tanggal Material Onsite",
+        "Tanggal Finish Instalasi",
+        "Tanggal Finish CT",
+        "Tanggal Finish UT",
+        "Tanggal Finish BAST",
+        "Tanggal DROP",
+        "Tanggal Plan DROP",
+        "Tanggal HOLD",
+        "Durasi Hold (Days)"
       ],
       "key_columns": [
         10,
@@ -344,7 +376,21 @@
         59,
         60,
         76,
-        77
+        77,
+        90,
+        91,
+        92,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103
       ],
       "overrides": {
         "50": [
@@ -416,7 +462,21 @@
         "",
         "",
         "HOP",
-        "Aging"
+        "Aging",
+        "Tanggal Inhand",
+        "Tanggal Finish Survey",
+        "Tanggal Finish DRM",
+        "Tanggal Finish Perizinan",
+        "Tanggal Finish Material Preparation",
+        "Tanggal Material Onsite",
+        "Tanggal Finish Instalasi",
+        "Tanggal Finish CT",
+        "Tanggal Finish UT",
+        "Tanggal Finish BAST",
+        "Tanggal DROP",
+        "Tanggal Plan DROP",
+        "Tanggal HOLD",
+        "Durasi Hold (Days)"
       ],
       "key_columns": [
         1,

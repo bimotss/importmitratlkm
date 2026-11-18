@@ -21,7 +21,7 @@ def test_real_source_manifest_and_fixed_formats(config):
     assert sum(s["group"] == "FO" for s in config["sources"]) == 28
     assert {s["title"] for s in config["sources"] if s["group"] == "RADIO"} == {
         "pst_radio", "multireka", "huawei", "cmm_zte", "eid", "aviat", "Telkom infra"}
-    assert [len(config["schemas"][k]) for k in ("fo", "radio", "all")] == [58, 70, 19]
+    assert [len(config["schemas"][k]) for k in ("fo", "radio", "all")] == [58, 70, 33]
     assert "data_HARRIF" not in {s["title"] for s in config["sources"]}
 
 
