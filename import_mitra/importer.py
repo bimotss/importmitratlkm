@@ -3,13 +3,13 @@ import logging
 import re
 import secrets
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from .google_api import SHEET_CELL_LIMIT
-from .mapping import canonical, col, norm, parse_source, partner_formula, project, quoted
+from .mapping import canonical, col, norm, parse_source, partner_formula, project, quoted, source_error_token
 
 LOG = logging.getLogger(__name__)
 STAGING_PATTERN = re.compile(r"^_IM_STAGING_[a-f0-9]{12}_\d+$")
@@ -21,6 +21,7 @@ class Table:
     headers: list
     rows: list
     formula: str | None = None
+    error_notes: dict = field(default_factory=dict)
 
     @property
     def height(self):
@@ -82,6 +83,23 @@ def build_tables(datasets, config, interval_seconds=3600, public_url="", aging_t
             ["CATATAN", "Nonaktifkan trigger dan menu impor Apps Script lama saat pindah ke VPS."],
         ]),
     ])
+    source_errors = []
+    for table in tables:
+        for row_index, row in enumerate(table.rows, 2):
+            for column, value in enumerate(row, 1):
+                token = source_error_token(value)
+                if not token:
+                    continue
+                note = f"Audit {now}: sumber belum tersedia ({token}). Nilai tidak direkayasa; periksa _Source_Errors."
+                row[column - 1] = ""
+                table.error_notes[(row_index, column)] = note
+                source_errors.append([table.title, f"{col(column)}{row_index}", table.headers[column - 1],
+                                      token, "Sumber belum tersedia", now, str(value)[:500]])
+    tables.append(Table("_Source_Errors", ["TAB", "SEL", "KOLOM", "JENIS", "STATUS", "DICATAT", "PESAN ASAL"],
+                        source_errors))
+    # Preserve the original error in the ledger without making it another error-valued cell.
+    for row in source_errors:
+        row[-1] = "Pesan sumber: " + row[-1]
     return tables, {"fo": len(fo), "radio": len(radio), "total": len(combined)}
 
 
@@ -297,6 +315,10 @@ class Importer:
                     requests.append({"updateCells": {"start": {"sheetId": sheet_id, "rowIndex": 1,
                         "columnIndex": 0}, "rows": [{"values": [{"userEnteredValue": {
                             "formulaValue": table.formula}}]}], "fields": "userEnteredValue"}})
+                for (row_index, column), note in table.error_notes.items():
+                    requests.append({"updateCells": {"start": {"sheetId": sheet_id,
+                        "rowIndex": row_index - 1, "columnIndex": column - 1},
+                        "rows": [{"values": [{"note": note}]}], "fields": "note"}})
                 requests.extend(r for r in formatting(sheet_id, table) if "repeatCell" not in r)
             progress(phase="publishing", message="Mengganti hasil sekaligus setelah semua sumber siap")
             # No deletes here: repeating this batch after a network timeout is safe.

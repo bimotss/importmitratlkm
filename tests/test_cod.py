@@ -429,3 +429,14 @@ def test_reconciliation_detects_rows_added_beyond_planned_grid(setup, monkeypatc
         sync.run(datasets)
     assert len(checked) == 4
     assert all(r.endswith('B20') for r in checked)
+
+
+@pytest.mark.parametrize('formula', ['=VSTACK(B2:B)', '=QUERY(B2:B,"select B")', '=BYROW(B2:B,LAMBDA(r,r))'])
+def test_added_records_do_not_duplicate_spill_helpers(setup, formula):
+    sync, api, datasets = setup
+    meta, heads, plans, _ = sync.prepare(datasets)
+    heads['fo']['templates'][69] = {'userEnteredValue': {'formulaValue': formula}}
+    sync.publish(meta, heads, plans, lambda **kwargs: None)
+    assert not any(r.get('copyPaste', {}).get('pasteType') == 'PASTE_FORMULA'
+                   and r['copyPaste']['destination']['sheetId'] == sync.profile['groups']['fo']['sheet_id']
+                   and r['copyPaste']['destination']['startColumnIndex'] == 69 for r in api.requests)

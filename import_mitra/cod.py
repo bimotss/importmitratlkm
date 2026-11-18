@@ -466,7 +466,7 @@ class CODSync:
                         formula = cell.get("userEnteredValue", {}).get("formulaValue", "")
                         if index + 1 in spec["managed_columns"] or not formula:
                             continue
-                        if re.search(r"\b(ARRAYFORMULA|LET|MAP|FILTER|GEMINI|AI|IMPORTRANGE)\s*\(", formula, re.IGNORECASE):
+                        if spill_formula(formula) or re.search(r"\b(GEMINI|AI)\s*\(", formula, re.IGNORECASE):
                             continue
                         requests.append({"copyPaste": {"source": {"sheetId": sid, "startRowIndex": 1,
                             "endRowIndex": 2, "startColumnIndex": index, "endColumnIndex": index + 1},

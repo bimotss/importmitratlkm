@@ -8,6 +8,15 @@ def norm(value):
     return re.sub(r"[^A-Z0-9]", "", str(value or "").strip().upper())
 
 
+
+def source_error_token(value):
+    """Recognize a source error value, including preserved error-message snapshots."""
+    if not isinstance(value, str):
+        return None
+    match = re.match(r"^#(REF!|N/A|VALUE!|DIV/0!|NAME\?|NUM!|ERROR!|SPILL!|CALC!|NULL!)(?:$|\s*\()", value.strip())
+    return match.group(1) if match else None
+
+
 def canonical(header, group, aliases):
     key = norm(header)
     if group == "RADIO":
@@ -80,6 +89,8 @@ def parse_source(values, source, aliases):
         value = row[key_index] if len(row) > key_index else ""
         if value is None or str(value).strip() == "" or norm(value) in {"SITEID", "NEID"}:
             continue
+        if source_error_token(value):
+            raise ValueError(f"{source['title']}: SITE ID / NE ID berisi error sumber; impor dibatalkan.")
         rows.append(list(row) + [""] * (width - len(row)))
     return SourceData(source, headers, keys, rows, key_index, raw_values=values, header_row=header_row)
 

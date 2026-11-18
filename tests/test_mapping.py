@@ -174,3 +174,25 @@ def test_legacy_radio_bast_and_current_inhand_fallback(config):
     records, missing = project_records([current], spec, config['aliases'], 'RADIO')
     assert not missing
     assert records[0]['values'] == ['H1', 46301, 46341]
+
+
+def test_source_error_is_empty_with_note_and_ledger_without_changing_source(config):
+    source = {'title': 'data_TEST', 'group': 'FO', 'start': 2}
+    data = parse_source([['SITE ID', 'PRIORITAS ORDER', 'NILAI DRM/WO', 'KETERANGAN UPDATE'],
+                         ['S1', '#N/A', 0, 'Catatan berisi #REF! tetap disimpan']], source, config['aliases'])
+    tables, _ = build_tables([data], config)
+    raw = next(t for t in tables if t.title == 'data_TEST')
+    fo = next(t for t in tables if t.title == 'DATA TIF FO')
+    ledger = next(t for t in tables if t.title == '_Source_Errors')
+    assert data.rows[0][1] == '#N/A'  # validator still sees the original source failure
+    assert raw.rows[0][2] == ''
+    assert raw.rows[0][3:] == [0, 'Catatan berisi #REF! tetap disimpan']
+    assert fo.rows[0][fo.headers.index('PRIORITAS ORDER')] == ''
+    assert len(ledger.rows) == 2
+    assert all('sumber belum tersedia' in note for t in [raw, fo] for note in t.error_notes.values())
+    assert all(row[-1].startswith('Pesan sumber: ') for row in ledger.rows)
+
+
+def test_source_error_in_record_identity_aborts_import(config):
+    with pytest.raises(ValueError, match='SITE ID / NE ID berisi error'):
+        parse_source([['SITE ID'], ['#REF!']], {'title': 'data_TEST', 'group': 'FO'}, config['aliases'])
