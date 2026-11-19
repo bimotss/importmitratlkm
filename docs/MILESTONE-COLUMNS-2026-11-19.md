@@ -1,5 +1,7 @@
 # Penambahan milestone 19 November 2026
 
+**Layout terkini setelah perapihan lanjutan:** DataDisatukan COD kini 38 kolom; HOP di W, Aging di X, dan milestone di Y–AL. Rentang BI–BV di laporan penambahan awal di bawah adalah posisi sebelum kolom sisa dibuang. Lihat `COMPACT-COMBINED-2026-11-19.md` untuk hasil perapihan.
+
 Kolom yang belum ada ditambahkan di kanan, tanpa memindahkan atau mengganti kolom lama. Nama diperiksa persis sesuai daftar permintaan; nama legacy tetap dipertahankan.
 
 | File / tab | Lebar lama → baru | Kolom baru |
