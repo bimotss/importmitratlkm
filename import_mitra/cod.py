@@ -365,7 +365,8 @@ class CODSync:
         spec = self.profile["groups"]["all"]
         extra = spec["managed_columns"]
         height = heads["all"]["properties"]["gridProperties"]["rowCount"]
-        entered = self.api.cells(self.target, f"{quoted(spec['title'])}!{col(extra[0])}2:{col(extra[-1])}{height}")
+        entered = (self.api.cells(self.target, f"{quoted(spec['title'])}!{col(extra[0])}2:{col(extra[-1])}{height}")
+                   if extra else [])
         plans["all"] = {"rows": remap_extra_values(old["all"], entered, combined, len(extra)),
                         "stats": {"last_row": len(combined) + 1, "rows": len(combined)}}
         summary["total"] = len(combined)
@@ -478,6 +479,8 @@ class CODSync:
         used = {s["properties"]["sheetId"] for s in meta["sheets"]}
         run_id, stages = secrets.token_hex(6), {}
         for i, (key, spec) in enumerate(self.profile["groups"].items()):
+            if not spec["managed_columns"]:
+                continue
             while (sheet_id := secrets.randbelow(2_000_000_000) + 1) in used:
                 pass
             used.add(sheet_id)
@@ -501,10 +504,10 @@ class CODSync:
                 for first, chunk in value_chunks(rows):
                     self.api.write(self.target, f"{quoted(stage['title'])}!A{first}", chunk)
             staged_headers = self.api.read_many(self.target, [
-                f"{quoted(stages[k]['title'])}!A1:{col(len(s['managed_columns']))}1"
-                for k, s in self.profile["groups"].items()])
-            expected_headers = [[s["headers"][c - 1] for c in s["managed_columns"]]
-                                for s in self.profile["groups"].values()]
+                f"{quoted(stages[k]['title'])}!A1:{col(len(self.profile['groups'][k]['managed_columns']))}1"
+                for k in stages])
+            expected_headers = [[self.profile["groups"][k]["headers"][c - 1]
+                                 for c in self.profile["groups"][k]["managed_columns"]] for k in stages]
             if [v.get("values", [[]])[0] for v in staged_headers] != expected_headers:
                 raise ValueError("Header staging COD tidak cocok; hasil lama tidak diganti.")
             # Header and anchor formulas must still be exactly what was inspected.

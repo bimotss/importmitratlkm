@@ -108,7 +108,7 @@ def test_dry_run_preserves_existing_identity_and_reports_additions(setup):
     assert result["fo"]["retained"] == 1
     assert result["fo"]["added"] == 1
     assert result["fo"]["removed"] == 1
-    assert result["columns"] == {"fo": 113, "radio": 103, "all": 74}
+    assert result["columns"] == {"fo": 113, "radio": 103, "all": 38}
     assert result["total"] == 4
     assert not api.requests and not api.writes
 
@@ -117,7 +117,7 @@ def test_cod_write_does_not_touch_header_columns_or_existing_helpers(setup):
     sync, api, datasets = setup
     meta, heads, plans, _summary = sync.prepare(datasets)
     assert plans["fo"]["rows"][1] == [""] * len(plans["fo"]["rows"][1])  # leave removed identity's slot
-    assert plans["all"]["rows"] == [["Testing", "ID-FO"], ["", ""], ["Radio", "ID-RADIO"], ["", ""]]
+    assert plans["all"]["rows"] == [[], [], [], []]
     sync.publish(meta, heads, plans, lambda **kwargs: None)
     groups = {s["sheet_id"]: s for s in sync.profile["groups"].values()}
     for request in api.requests:
@@ -200,7 +200,7 @@ def test_standalone_cod_job_keeps_dashboard_metric_shape(setup, monkeypatch):
         **sync.run(datasets, progress, dry_run=dry_run), "sources": len(datasets)})
     result = CODImporter(sync).run(dry_run=True)
     assert result["fo"] == 2 and result["radio"] == 2 and result["total"] == 4
-    assert result["cod"]["columns"] == {"fo": 113, "radio": 103, "all": 74}
+    assert result["cod"]["columns"] == {"fo": 113, "radio": 103, "all": 38}
 
 
 def test_header_race_after_staging_aborts_before_live_write(setup):
@@ -517,3 +517,26 @@ def test_business_keys_preserve_zero_sp_across_numeric_and_formula_cells():
     assert business_key(['SITE-1', 0, 'AVIAT']) == expected
     assert business_key(['SITE-1', 0.0, 'AVIAT']) == expected
     assert business_key(['SITE-1', '', 'AVIAT']) != expected
+
+
+def test_combined_layout_has_no_placeholder_or_unused_internal_columns():
+    from import_mitra.mapping import MILESTONE_HEADERS
+    profile = json.loads((ROOT / 'config/cod2026.json').read_text())
+    combined = profile['groups']['all']
+    assert len(combined['headers']) == 38
+    assert '' not in combined['headers'] and 'test' not in combined['headers']
+    assert combined['headers'][22:38] == ['HOP', 'Aging', *MILESTONE_HEADERS]
+    assert '__PowerAppsId__' not in combined['headers']
+    assert combined['managed_columns'] == []
+
+
+def test_combined_formulas_need_no_empty_staging_sheet(setup):
+    sync, api, datasets = setup
+    meta, heads, plans, _ = sync.prepare(datasets)
+    sync.publish(meta, heads, plans, lambda **kwargs: None)
+    created = [r['addSheet']['properties'] for r in api.requests if 'addSheet' in r]
+    assert len(created) == 2
+    assert all(p['gridProperties']['columnCount'] > 0 for p in created)
+    assert len(api.uploads) == 2
+    combined_id = sync.profile['groups']['all']['sheet_id']
+    assert not any(r.get('copyPaste', {}).get('destination', {}).get('sheetId') == combined_id for r in api.requests)
