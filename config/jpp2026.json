@@ -1,0 +1,8 @@
+{
+  "sheet_id": 558651678,
+  "title": "JPP",
+  "source_sheet": "ALL DATA",
+  "aliases": {"NO": "NO Order", "Jumlah Concat": "count concat", "Program Kuota": "Program Kuota FIXED"},
+  "formula_columns": ["NE-FE"],
+  "headers": ["NO", "Src Data", "Jumlah Concat", "Area", "Regional", "TREG", "Site Unik", "Jumlah Order", "Left", "Site ID/NE", "Name NE", "Site FE", "Name FE", "Tower Provider NE", "Tower Height NE", "Lat", "Long", "Program Kuota", "Program New Infra", "Status Infra", "Date Order", "NIM Order", "Perihal Order", "BW Order", "BW Fullfill Radio", "SoW Order", "Mitra Upd DWS", "Mitra Radio", "Mitra FO", "Plan TIF FO", "Mitra Final", "Grouping Transport", "Plan Transport", "SoW Transport", "Status Budget", "Remark/Issue Site", "Year PO", "Status Inhand", "Budget FO", "Budget Radio", "Kapan Change to Radio", "Juskeb FO", "Grouping Remark JF", "Remark Juskeb FO", "Juskeb Radio", "Grouping Remark JR", "Remark Juskeb Radio", "PoW Radio", "Grouping Jarak", "Jarak HLD", "Catuan", "Status MoM Radio", "Freq Radio", "Risk Radio", "SoW Donor Radio", "Hop to Metro", "NE-FE"]
+}

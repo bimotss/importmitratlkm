@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for an authenticated JPP Excel upload
+
+[Path]
+PathExists=/opt/botCOD/data/jpp-upload/pending
+Unit=jpp-upload.service
+
+[Install]
+WantedBy=multi-user.target

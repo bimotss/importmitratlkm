@@ -21,6 +21,10 @@ def main():
     once.add_argument("--trigger", choices=("cli", "web"), default="cli")
     cod = sub.add_parser("sync-cod", help="Perbarui COD 2026 tanpa mengganti header/kolom/rumus bantu")
     cod.add_argument("--dry-run", action="store_true", help="Periksa pemetaan COD tanpa menulis")
+    jpp = sub.add_parser("update-jpp", help="Ganti nilai JPP dari tab ALL DATA pada Excel")
+    jpp.add_argument("--file", type=Path, required=True)
+    jpp.add_argument("--dry-run", action="store_true", help="Periksa Excel dan header JPP tanpa menulis")
+    sub.add_parser("process-jpp-upload", help="Proses satu file dari antrean upload web yang dikonfigurasi")
     sub.add_parser("check", help="Periksa akses tujuan + semua sumber tanpa menulis")
     val_cmd = sub.add_parser("validate", help="Validasi kualitas data mitra (dropdown & kolom wajib) tanpa menulis ke Google Sheets")
     val_cmd.add_argument("--report", type=Path, default=None, help="Lokasi output file laporan JSON")
@@ -47,6 +51,14 @@ def main():
                 handle.write(json.dumps(info))
             settings.credentials_file.chmod(0o600)
             print(f"Token tersimpan di {settings.credentials_file}. Jangan masukkan ke Git.")
+        elif args.command == "process-jpp-upload":
+            from .jpp_queue import process_upload
+            process_upload(settings)
+        elif args.command == "update-jpp":
+            from .jpp import JPPImport
+            runner = JobRunner(settings, lambda: JPPImport(settings, args.file))
+            result = runner.run(dry_run=args.dry_run, trigger="cli", job_type="update_jpp")
+            print(json.dumps(result, indent=2))
         elif args.command == "serve":
             import uvicorn
 

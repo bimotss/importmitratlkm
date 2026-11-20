@@ -25,6 +25,8 @@ class Settings:
     validation_report_path: Path = Path("runtime/validation-report.json")
     history_db_path: Path = Path("runtime/history.db")
     history_retention_days: int = 90
+    jpp_profile: Path = Path("config/jpp2026.json")
+    jpp_upload_dir: Path = Path("runtime/jpp-upload")
 
     @classmethod
     def load(cls):
@@ -53,6 +55,8 @@ class Settings:
             ).resolve(),
             history_db_path=history_db_path,
             history_retention_days=int(os.getenv("MITRA_HISTORY_RETENTION_DAYS", "90")),
+            jpp_profile=Path(os.getenv("MITRA_JPP_PROFILE", "config/jpp2026.json")).resolve(),
+            jpp_upload_dir=Path(os.getenv("JPP_UPLOAD_DIR", "runtime/jpp-upload")).resolve(),
         )
         if s.interval_seconds < 60:
             raise ValueError("MITRA_INTERVAL_SECONDS minimal 60 detik.")

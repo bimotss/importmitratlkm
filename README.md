@@ -12,6 +12,7 @@ Pengganti importer Apps Script untuk **Rekap Mitra FO dan RADIO 2026**. Jalankan
 - Setelah staging disalin, area spill MITRA benar-benar dikosongkan sebelum formula dipasang; seluruh hasil nama mitra diperiksa kembali sebelum job dinyatakan sukses. Ini mencegah `#REF!` akibat sel kosong semu dari hasil paste.
 - Sumber hanya **dibaca**. Hanya spreadsheet tujuan dalam config yang ditulis. ID tab tujuan yang sudah ada dipertahankan.
 - Opsional: [sinkronisasi COD 2026 dengan seluruh kolom/rumus bantu lama dipertahankan](docs/COD-2026.md). Gunakan `sync-cod --dry-run` sebelum mengaktifkan `MITRA_SYNC_COD=true`.
+- [Update JPP melalui upload Excel di dashboard](docs/JPP-UPLOAD.md): ganti data dari tab ALL DATA tanpa mengubah header/urutan kolom JPP; kolom tanpa sumber dikosongkan dan rumus NE-FE tetap tersedia.
 - Semua sumber dibaca dahulu, lalu hasil diunggah ke tab staging tersembunyi. Setelah header diperiksa, hasil seluruh tab diganti dalam **satu batch atomik**. Jika pembacaan/upload staging gagal, isi hasil lama tetap utuh.
 
 ## 1. Instal di laptop dan siapkan akses Google
